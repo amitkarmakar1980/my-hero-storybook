@@ -42,23 +42,19 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout for image generation
 
     try {
+      // Use Imagen 4.0 generate model with predict endpoint
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-001:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
+            instances: [
               {
-                role: "user",
-                parts: [
-                  {
-                    text: prompt.prompt,
-                  },
-                ],
+                prompt: prompt.prompt,
               },
             ],
           }),
@@ -71,6 +67,10 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
       if (!response.ok) {
         const errorText = await response.text();
         const statusCode = response.status;
+        
+        if (process.env.NODE_ENV === "development") {
+          console.log(`Imagen API error (${statusCode})`);
+        }
         
         // If Imagen not available, use placeholder
         if (statusCode === 404 || statusCode === 403 || statusCode === 400) {
@@ -90,18 +90,18 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
 
       const data = (await response.json()) as any;
       if (process.env.NODE_ENV === "development") {
-        console.log(`Response for page ${prompt.pageNumber}:`, JSON.stringify(data));
+        console.log(`Response for page ${prompt.pageNumber}:`, JSON.stringify(data).substring(0, 200));
       }
 
-      // Extract image URL from Imagen API response structure
-      const imageUrl = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType
-        ? `data:${data.candidates[0].content.parts[0].inlineData.mimeType};base64,${data.candidates[0].content.parts[0].inlineData.data}`
-        : data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (!imageUrl) {
+      // Extract image from Imagen predict response
+      // Response format: { predictions: [{ bytesBase64Encoded: "...", mimeType: "image/png" }] }
+      const prediction = data.predictions?.[0];
+      if (!prediction || !prediction.bytesBase64Encoded) {
         const errorDetail = data.error?.message || `No image generated. Response: ${JSON.stringify(data)}`;
         throw new Error(`Image generation failed: ${errorDetail}`);
       }
+
+      const imageUrl = `data:${prediction.mimeType || 'image/png'};base64,${prediction.bytesBase64Encoded}`;
 
       return {
         pageNumber: prompt.pageNumber,
