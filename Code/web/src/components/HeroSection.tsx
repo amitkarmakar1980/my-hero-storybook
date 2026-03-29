@@ -1,3 +1,7 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+
 const BRAND_ORANGE = "#FC800A";
 const BRAND_NAVY = "#171E45";
 const BRAND_PEACH = "#FFD5C0";
@@ -5,6 +9,7 @@ const BRAND_CREAM = "#FBF1E3";
 const BRAND_LAVENDER = "#F0EFFE";
 
 export default function HeroSection() {
+  const router = useRouter();
   return (
     <section id="hero-story-section" className="relative overflow-hidden bg-[#FCF7EE]">
       {/* Layered radial depth — three overlapping halos for visual richness */}
@@ -71,9 +76,9 @@ export default function HeroSection() {
 
             {/* CTA group */}
             <div className="flex flex-col sm:flex-row gap-3 pt-1">
-              {/* Primary CTA */}
               <button
                 id="landing-primary-cta"
+                onClick={() => router.push("/create")}
                 className="rounded-full bg-[#FC800A] px-8 py-3.5 text-base font-semibold text-white
                            shadow-[0_6px_20px_rgba(252,128,10,0.38)]
                            hover:bg-[#e5720a] hover:shadow-[0_8px_26px_rgba(252,128,10,0.48)] hover:-translate-y-0.5
@@ -82,8 +87,6 @@ export default function HeroSection() {
               >
                 Create Your Story
               </button>
-
-              {/* Secondary CTA — text style, clearly subordinate */}
               <button
                 className="px-4 py-3.5 text-base font-medium text-[#171E45]/70
                            underline underline-offset-4 decoration-[#171E45]/25
@@ -95,12 +98,10 @@ export default function HeroSection() {
               </button>
             </div>
 
-            {/* Emotional tagline */}
             <p className="text-sm italic text-[#020202]/55 -mt-1 max-w-xs leading-snug">
               Watch their face light up when they see themselves in the story.
             </p>
 
-            {/* Trust signal — slightly more visible */}
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[#88B520] text-base" aria-hidden="true">✓</span>
               <p className="text-sm font-medium text-[#020202]/65 tracking-wide">
@@ -113,10 +114,8 @@ export default function HeroSection() {
           <div className="flex justify-center md:justify-end">
             <div id="story-preview-panel" className="relative w-80 md:w-96">
 
-              {/* Storybook page frame */}
               <div className="rounded-3xl bg-white border-2 border-[#FFD5C0] shadow-[0_20px_60px_rgba(252,128,10,0.14)] overflow-hidden">
 
-                {/* Title banner */}
                 <div
                   className="px-5 py-3 flex items-center justify-between"
                   style={{ backgroundColor: BRAND_ORANGE }}
@@ -137,10 +136,7 @@ export default function HeroSection() {
                   </div>
                 </div>
 
-                {/* Comic panels */}
                 <div className="grid grid-cols-2 gap-2 p-3">
-
-                  {/* Character panel */}
                   <div
                     className="col-span-1 row-span-2 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 min-h-[140px]"
                     style={{ backgroundColor: BRAND_NAVY }}
@@ -167,7 +163,6 @@ export default function HeroSection() {
                     </div>
                   </div>
 
-                  {/* Scene panel */}
                   <div
                     className="rounded-2xl p-2 flex flex-col items-center justify-center gap-1"
                     style={{ backgroundColor: BRAND_CREAM }}
@@ -179,7 +174,6 @@ export default function HeroSection() {
                     </div>
                   </div>
 
-                  {/* Speech bubble panel */}
                   <div
                     className="rounded-2xl p-2 flex flex-col justify-center"
                     style={{ backgroundColor: BRAND_LAVENDER }}
@@ -200,7 +194,6 @@ export default function HeroSection() {
                   </div>
                 </div>
 
-                {/* Page footer */}
                 <div className="px-4 py-2.5 border-t border-[#FFD5C0] flex items-center justify-between">
                   <div className="flex gap-0.5">
                     {[...Array(5)].map((_, i) => (
@@ -211,7 +204,6 @@ export default function HeroSection() {
                 </div>
               </div>
 
-              {/* Floating label badge */}
               <div className="absolute -top-3 -right-3 flex items-center gap-1.5 rounded-full bg-white border border-[#FFD5C0] shadow-md px-3 py-1.5">
                 <span className="text-sm">🌟</span>
                 <span className="text-xs font-semibold text-[#171E45]">Your child&apos;s story</span>

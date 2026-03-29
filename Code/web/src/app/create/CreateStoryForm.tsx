@@ -1,41 +1,56 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { STORY_THEMES } from "../lib/storyThemes";
+import { useRouter } from "next/navigation";
+import { STORY_THEMES } from "@/lib/storyThemes";
+import type { AgeBand, StoryTheme, StoryTrait } from "@/types/storybook";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const PERSONALITY_TRAITS = ["Brave", "Curious", "Funny", "Kind"] as const;
-type PersonalityTrait = (typeof PERSONALITY_TRAITS)[number];
+const PERSONALITY_TRAITS: StoryTrait[] = ["Brave", "Curious", "Funny", "Kind"];
 
 const AGE_BANDS = [
-  { value: "3-4", label: "3–4 years" },
-  { value: "5-6", label: "5–6 years" },
-  { value: "7-8", label: "7–8 years" },
-] as const;
-type AgeBand = (typeof AGE_BANDS)[number]["value"];
+  { value: "3-4" as AgeBand, label: "3–4 years" },
+  { value: "5-6" as AgeBand, label: "5–6 years" },
+  { value: "7-8" as AgeBand, label: "7–8 years" },
+];
 
-const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+// Gemini inline data limit is ~4 MB; keep photo uploads safely under that
+const MAX_PHOTO_SIZE_BYTES = 4 * 1024 * 1024;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface StoryCreationData {
   childName: string;
   ageBand: AgeBand | "";
-  selectedThemeId: string;
-  selectedTraits: PersonalityTrait[];
+  selectedTheme: StoryTheme | "";
+  selectedTraits: StoryTrait[];
 }
 
 interface RequiredFieldErrors {
   childName: string;
   ageBand: string;
-  selectedThemeId: string;
+  selectedTheme: string;
 }
 
 interface FieldTouchedState {
   childName: boolean;
   ageBand: boolean;
-  selectedThemeId: boolean;
+  selectedTheme: boolean;
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -80,53 +95,20 @@ function ValidationError({ id, message }: { id?: string; message: string }) {
   );
 }
 
-function SectionDivider() {
-  return <hr className="border-[#FFD5C0]" />;
-}
-
-// ── Success screen ───────────────────────────────────────────────────────────
-
-function StoryCreationSuccess({ childName, themeId }: { childName: string; themeId: string }) {
-  const theme = STORY_THEMES.find((t) => t.id === themeId);
-  return (
-    <div className="flex flex-col items-center gap-6 py-8 text-center">
-      <span className="text-6xl" aria-hidden="true">
-        {theme?.icon ?? "📖"}
-      </span>
-      <div className="flex flex-col gap-2">
-        <h2
-          className="text-3xl text-[#171E45]"
-          style={{ fontFamily: "var(--font-rowdies)" }}
-        >
-          {childName}&apos;s story is on its way!
-        </h2>
-        <p className="text-base text-[#020202]/60 max-w-sm mx-auto leading-relaxed">
-          We&apos;re crafting a personalized {theme?.label} adventure.
-          It will be ready in just a moment.
-        </p>
-      </div>
-      <div className="flex items-center gap-2 rounded-full bg-[#FBF1E3] border border-[#FFD5C0] px-5 py-2.5">
-        <span className="text-[#88B520]" aria-hidden="true">✓</span>
-        <span className="text-sm font-medium text-[#171E45]">Story request received</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export default function CreateStoryForm() {
   const [storyData, setStoryData] = useState<StoryCreationData>({
     childName: "",
     ageBand: "",
-    selectedThemeId: "",
+    selectedTheme: "",
     selectedTraits: [],
   });
 
   const [touched, setTouched] = useState<FieldTouchedState>({
     childName: false,
     ageBand: false,
-    selectedThemeId: false,
+    selectedTheme: false,
   });
 
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -134,8 +116,10 @@ export default function CreateStoryForm() {
   const [photoError, setPhotoError] = useState<string>("");
 
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string>("");
 
+  const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
   const activePhotoUrlRef = useRef<string | null>(null);
 
@@ -151,10 +135,10 @@ export default function CreateStoryForm() {
   const errors: RequiredFieldErrors = {
     childName: !storyData.childName.trim() ? "Please enter your child's name." : "",
     ageBand: !storyData.ageBand ? "Please select an age group." : "",
-    selectedThemeId: !storyData.selectedThemeId ? "Please choose a story theme." : "",
+    selectedTheme: !storyData.selectedTheme ? "Please choose a story theme." : "",
   };
 
-  const isFormValid = !errors.childName && !errors.ageBand && !errors.selectedThemeId;
+  const isFormValid = !errors.childName && !errors.ageBand && !errors.selectedTheme;
 
   const shouldShowError = (field: keyof FieldTouchedState) =>
     (touched[field] || submitAttempted) && !!errors[field];
@@ -174,12 +158,12 @@ export default function CreateStoryForm() {
     setTouched((prev) => ({ ...prev, ageBand: true }));
   };
 
-  const handleThemeSelect = (themeId: string) => {
-    setStoryData((prev) => ({ ...prev, selectedThemeId: themeId }));
-    setTouched((prev) => ({ ...prev, selectedThemeId: true }));
+  const handleThemeSelect = (theme: StoryTheme) => {
+    setStoryData((prev) => ({ ...prev, selectedTheme: theme }));
+    setTouched((prev) => ({ ...prev, selectedTheme: true }));
   };
 
-  const handleTraitToggle = (trait: PersonalityTrait) => {
+  const handleTraitToggle = (trait: StoryTrait) => {
     setStoryData((prev) => ({
       ...prev,
       selectedTraits: prev.selectedTraits.includes(trait)
@@ -191,7 +175,7 @@ export default function CreateStoryForm() {
   const handlePhotoFileSelected = (file: File) => {
     setPhotoError("");
     if (file.size > MAX_PHOTO_SIZE_BYTES) {
-      setPhotoError("Photo must be under 10 MB. Please choose a smaller image.");
+      setPhotoError("Photo must be under 4 MB. Please choose a smaller image.");
       return;
     }
     if (activePhotoUrlRef.current) URL.revokeObjectURL(activePhotoUrlRef.current);
@@ -215,33 +199,66 @@ export default function CreateStoryForm() {
     if (photoInputRef.current) photoInputRef.current.value = "";
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSubmitAttempted(true);
     if (!isFormValid) return;
 
-    // TODO: connect to backend — send storyData + photoFile
-    console.log("Story creation submitted:", { ...storyData, photoFile });
-    setIsSubmitted(true);
+    setIsLoading(true);
+    setApiError("");
+
+    try {
+      let uploadedImageBase64: string | undefined;
+      let uploadedImageMimeType: string | undefined;
+      let uploadedImageName: string | undefined;
+
+      if (photoFile) {
+        uploadedImageBase64 = await fileToBase64(photoFile);
+        uploadedImageMimeType = photoFile.type;
+        uploadedImageName = photoFile.name;
+      }
+
+      const res = await fetch("/api/generate-storybook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          childName: storyData.childName,
+          ageBand: storyData.ageBand as AgeBand,
+          theme: storyData.selectedTheme as StoryTheme,
+          traits: storyData.selectedTraits,
+          ...(uploadedImageBase64
+            ? { uploadedImageBase64, uploadedImageMimeType, uploadedImageName }
+            : {}),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Story generation failed. Please try again.");
+      }
+
+      sessionStorage.setItem("heroStorybookDraft", JSON.stringify(data));
+      router.push("/story-preview");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setApiError(message);
+      setIsLoading(false);
+    }
   };
 
   // ── Render ──
 
-  if (isSubmitted) {
-    return (
-      <StoryCreationSuccess
-        childName={storyData.childName}
-        themeId={storyData.selectedThemeId}
-      />
-    );
-  }
-
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-7">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-9">
 
       {/* ① Child's name */}
       <StoryFormSection number={1} title="What's your child's name?">
+        <label htmlFor="childName-input" className="sr-only">
+          Child's name
+        </label>
         <input
+          id="childName-input"
           type="text"
           value={storyData.childName}
           onChange={(e) => handleChildNameChange(e.target.value)}
@@ -264,7 +281,6 @@ export default function CreateStoryForm() {
         )}
       </StoryFormSection>
 
-      <SectionDivider />
 
       {/* ② Age group */}
       <StoryFormSection number={2} title="How old are they?">
@@ -282,12 +298,12 @@ export default function CreateStoryForm() {
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                onClick={() => handleAgeBandSelect(value as AgeBand)}
+                onClick={() => handleAgeBandSelect(value)}
                 className={`rounded-full px-6 py-2.5 text-sm font-medium
                             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
                             transition-all duration-200
                             ${isSelected
-                              ? "bg-[#FC800A] text-white border-2 border-[#FC800A] font-semibold shadow-[0_3px_10px_rgba(252,128,10,0.3)]"
+                              ? "bg-[#FC800A] text-white border-2 border-[#FC800A] font-semibold shadow-[0_4px_14px_rgba(252,128,10,0.4)] scale-[1.05]"
                               : "bg-[#FCF7EE] text-[#171E45] border-2 border-[#FFD5C0] hover:border-[#FC800A]/40 hover:bg-[#FBF1E3]"
                             }`}
               >
@@ -301,7 +317,6 @@ export default function CreateStoryForm() {
         )}
       </StoryFormSection>
 
-      <SectionDivider />
 
       {/* ③ Story theme */}
       <StoryFormSection
@@ -316,21 +331,21 @@ export default function CreateStoryForm() {
           aria-required="true"
         >
           {STORY_THEMES.map((theme) => {
-            const isSelected = storyData.selectedThemeId === theme.id;
+            const isSelected = storyData.selectedTheme === theme.label;
             return (
               <button
-                key={theme.id}
+                key={theme.label}
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                onClick={() => handleThemeSelect(theme.id)}
+                onClick={() => handleThemeSelect(theme.label as StoryTheme)}
                 className={`relative rounded-2xl p-4 flex flex-col gap-2 text-left
                             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
                             hover:-translate-y-0.5 hover:shadow-md
                             transition-all duration-200
                             ${isSelected
-                              ? "border-2 shadow-md"
-                              : "border-2 border-transparent hover:border-[#FFD5C0]"
+                              ? "border-2 scale-[1.03] shadow-[0_6px_24px_rgba(0,0,0,0.13)]"
+                              : "border-2 border-transparent hover:border-[#FFD5C0] hover:-translate-y-0.5 hover:shadow-md"
                             }`}
                 style={{
                   backgroundColor: theme.bgColor,
@@ -365,12 +380,11 @@ export default function CreateStoryForm() {
             );
           })}
         </div>
-        {shouldShowError("selectedThemeId") && (
-          <ValidationError message={errors.selectedThemeId} />
+        {shouldShowError("selectedTheme") && (
+          <ValidationError message={errors.selectedTheme} />
         )}
       </StoryFormSection>
 
-      <SectionDivider />
 
       {/* ④ Personality traits */}
       <StoryFormSection
@@ -409,7 +423,6 @@ export default function CreateStoryForm() {
         </div>
       </StoryFormSection>
 
-      <SectionDivider />
 
       {/* ⑤ Photo upload */}
       <StoryFormSection
@@ -461,8 +474,11 @@ export default function CreateStoryForm() {
             aria-label="Upload a photo of your child"
           >
             <span className="text-3xl" aria-hidden="true">📷</span>
-            <span className="text-sm font-medium text-[#171E45]/60">Click to upload a photo</span>
-            <span className="text-xs text-[#020202]/35">JPG or PNG · max 10 MB</span>
+            <span className="text-sm font-medium text-[#171E45]/70">Click to upload a photo</span>
+            <span className="text-xs text-[#020202]/55 text-center leading-snug max-w-[200px]">
+              We&apos;ll turn this into your child&apos;s story character
+            </span>
+            <span className="text-xs text-[#020202]/30 mt-0.5">JPG or PNG · max 4 MB</span>
           </button>
         )}
 
@@ -480,37 +496,71 @@ export default function CreateStoryForm() {
         {photoError && (
           <ValidationError message={photoError} />
         )}
+
+        {/* Privacy trust signal */}
+        <p className="mt-3 text-xs text-[#020202]/38 flex items-center gap-1.5">
+          <span aria-hidden="true">🔒</span>
+          Your photo is used only to generate this story and is not stored.
+        </p>
       </StoryFormSection>
 
       {/* ── Submit ── */}
       <div className="flex flex-col items-center gap-3 pt-2">
         <button
           type="submit"
-          aria-disabled={!isFormValid}
+          disabled={isLoading}
+          aria-disabled={!isFormValid || isLoading}
           className={`w-full sm:w-auto rounded-full px-10 py-4 text-base font-semibold
                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                      transition-all duration-200
-                      ${isFormValid
+                      transition-[background-color,transform,box-shadow,opacity] duration-200
+                      ${isFormValid && !isLoading
                         ? `bg-[#FC800A] text-white
                            shadow-[0_6px_20px_rgba(252,128,10,0.38)]
                            hover:bg-[#e5720a] hover:-translate-y-0.5
                            hover:shadow-[0_8px_26px_rgba(252,128,10,0.48)]
                            active:scale-[0.97]`
-                        : "bg-[#020202]/8 text-[#020202]/30 cursor-not-allowed"
+                        : isLoading
+                          ? "bg-[#FC800A]/80 text-white cursor-wait"
+                          : "bg-[#020202]/8 text-[#020202]/30 cursor-not-allowed"
                       }`}
         >
-          Create My Story
+          {isLoading ? (
+            <span className="flex items-center gap-2.5">
+              <svg
+                className="animate-spin w-4 h-4 text-white flex-shrink-0"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <title>Creating story</title>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Creating your story…
+            </span>
+          ) : (
+            "Create My Story"
+          )}
         </button>
 
-        {submitAttempted && !isFormValid && (
+        {submitAttempted && !isFormValid && !isLoading && (
           <p role="alert" className="text-sm text-red-500 text-center">
             Please complete the required fields above.
           </p>
         )}
 
-        <p className="text-xs text-[#020202]/40 text-center">
-          No account needed &middot; Your story will be ready in seconds
-        </p>
+        {apiError && (
+          <p role="alert" className="text-sm text-red-500 text-center max-w-sm">
+            {apiError}
+          </p>
+        )}
+
+        {!isLoading && (
+          <p className="text-xs text-[#020202]/40 text-center">
+            No account needed &middot; Your story will be ready in about 30 seconds
+          </p>
+        )}
       </div>
 
     </form>

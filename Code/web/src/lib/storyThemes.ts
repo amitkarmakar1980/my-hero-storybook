@@ -1,11 +1,12 @@
-// Shared story theme definitions — used by the landing page and the create form
+// Display configuration for Hero Storybook story themes.
+// StoryThemeConfig is the visual/UI data; the StoryTheme string union
+// in @/types/storybook is what gets sent to the API.
 
-export interface StoryTheme {
-  id: string;
-  icon: string;
+export interface StoryThemeConfig {
   label: string;
-  description: string;         // Full description for landing page cards
-  shortDescription: string;    // Concise version for the create form
+  icon: string;
+  description: string;
+  shortDescription: string;
   bgColor: string;
   accentColor: string;
   iconBg: string;
@@ -15,11 +16,10 @@ export interface StoryTheme {
   decorations: [string, string, string];
 }
 
-export const STORY_THEMES: StoryTheme[] = [
+export const STORY_THEMES: StoryThemeConfig[] = [
   {
-    id: "space-explorer",
-    icon: "🚀",
     label: "Space Explorer",
+    icon: "🚀",
     description:
       "Blast off into a galaxy of wonder. Your child pilots their own rocket through dazzling nebulae and makes friends with star creatures.",
     shortDescription: "Rockets, stars, and alien friends",
@@ -32,9 +32,8 @@ export const STORY_THEMES: StoryTheme[] = [
     decorations: ["⭐", "🌙", "🪐"],
   },
   {
-    id: "jungle-adventure",
-    icon: "🦁",
     label: "Jungle Adventure",
+    icon: "🦁",
     description:
       "Swing through emerald canopies, discover hidden waterfalls, and lead a tribe of playful animals on a grand expedition.",
     shortDescription: "Wild animals and hidden treasures",
@@ -47,9 +46,8 @@ export const STORY_THEMES: StoryTheme[] = [
     decorations: ["🌿", "🐒", "🌺"],
   },
   {
-    id: "magic-school",
-    icon: "🪄",
     label: "Magic School",
+    icon: "🪄",
     description:
       "Enroll in a school of spells and wonder. Your child brews potions, tames dragons, and becomes the most talented young wizard.",
     shortDescription: "Spells, potions, and friendly dragons",

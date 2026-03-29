@@ -1,6 +1,6 @@
-import { STORY_THEMES, type StoryTheme } from "../lib/storyThemes";
+import { STORY_THEMES, type StoryThemeConfig } from "@/lib/storyThemes";
 
-function StoryThemeCard({ theme }: { theme: StoryTheme }) {
+function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
   return (
     <button
       type="button"
@@ -91,7 +91,7 @@ export default function ThemesSection() {
         {/* Theme cards grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {STORY_THEMES.map((theme) => (
-            <StoryThemeCard key={theme.id} theme={theme} />
+            <StoryThemeCard key={theme.label} theme={theme} />
           ))}
         </div>
 
