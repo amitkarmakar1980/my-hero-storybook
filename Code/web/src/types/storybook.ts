@@ -49,4 +49,5 @@ export interface GeneratedStoryImage {
   pageNumber: number;
   imageUrl?: string;
   error?: string;
+  isPlaceholder?: boolean;
 }

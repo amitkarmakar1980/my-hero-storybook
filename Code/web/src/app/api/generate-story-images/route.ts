@@ -18,6 +18,16 @@ interface GenerateStoryImagesResponse {
   images: GeneratedStoryImage[];
 }
 
+// ── Generate a placeholder image using DiceBear avatars API ──────────────────
+
+function generatePlaceholderImageUrl(pageNumber: number, prompt: string): string {
+  // Create a deterministic seed based on page number and prompt
+  const seed = `page-${pageNumber}-${Buffer.from(prompt).toString('base64').substring(0, 20)}`;
+  
+  // Use DiceBear Avatars API (free, no auth required) to generate colorful placeholder
+  return `https://api.dicebear.com/7.x/lorelei/svg?seed=${encodeURIComponent(seed)}&scale=80&backgroundColor=FCF7EE`;
+}
+
 // ── Per-page image generation ─────────────────────────────────────────────────
 
 async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStoryImage> {
@@ -27,7 +37,9 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
       throw new Error("GEMINI_API_KEY environment variable is not set.");
     }
 
-    console.log(`Generating image for page ${prompt.pageNumber}...`);
+    if (process.env.NODE_ENV === "development") {
+      console.log(`Generating image for page ${prompt.pageNumber}...`);
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
@@ -58,7 +70,22 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API error (${response.status}): ${errorText}`);
+        const statusCode = response.status;
+        
+        // If Imagen not available, use placeholder
+        if (statusCode === 404 || statusCode === 403 || statusCode === 400) {
+          if (process.env.NODE_ENV === "development") {
+            console.log(`Imagen API not available (${statusCode}). Using placeholder image.`);
+          }
+          
+          return {
+            pageNumber: prompt.pageNumber,
+            imageUrl: generatePlaceholderImageUrl(prompt.pageNumber, prompt.prompt),
+            isPlaceholder: true,
+          };
+        }
+        
+        throw new Error(`API error (${statusCode}): ${errorText}`);
       }
 
       const data = (await response.json()) as any;
@@ -86,8 +113,17 @@ async function generatePageImage(prompt: PageImagePrompt): Promise<GeneratedStor
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Image generation failed.";
-    console.error(`Page ${prompt.pageNumber} image error:`, message);
-    return { pageNumber: prompt.pageNumber, error: message };
+    if (process.env.NODE_ENV === "development") {
+      console.error(`Page ${prompt.pageNumber} image error:`, message);
+    }
+    
+    // Fallback to placeholder image on error
+    return {
+      pageNumber: prompt.pageNumber,
+      imageUrl: generatePlaceholderImageUrl(prompt.pageNumber, prompt.pageNumber.toString()),
+      isPlaceholder: true,
+      error: message,
+    };
   }
 }
 
@@ -112,7 +148,9 @@ export async function POST(request: NextRequest) {
     const responseBody: GenerateStoryImagesResponse = { images };
     return NextResponse.json(responseBody);
   } catch (error) {
-    console.error("generate-story-images error:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("generate-story-images error:", error);
+    }
     return NextResponse.json(
       { error: "Failed to generate story images." },
       { status: 500 }
