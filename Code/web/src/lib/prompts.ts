@@ -100,29 +100,46 @@ export function buildPageImagePromptPrompt(
   theme: string,
   title: string
 ) {
+  const GLOBAL_STYLE_PREFIX = "A bright, colorful, soft 3D-style children's storybook illustration, consistent character design, smooth lighting, rounded shapes, Pixar-like quality";
+
   return `
-You are generating an illustration prompt for a children's storybook page.
+You are generating a visual illustration prompt for a children's storybook page.
+ALL images must be visually consistent and use the EXACT same art style.
 
-Story title: ${title}
-Theme: ${theme}
-Character description: ${profile.characterDescription}
-Style notes: ${profile.styleNotes}
-Recurring visual anchors: ${profile.recurringVisualAnchors.join(", ")}
-Page number: ${page.pageNumber}
-Page text: ${page.text}
+CRITICAL - Apply this style to EVERY image:
+"${GLOBAL_STYLE_PREFIX}"
 
-Requirements:
-- same child hero across every page
-- colorful illustrated storybook style
-- child-safe
-- emotionally expressive
-- no text inside image
-- make the child the visual focus
+Story Context:
+- Title: ${title}
+- Theme: ${theme}
+- Genre: ${theme} adventure story for children
 
-Return strict JSON:
+Character (MUST appear consistently in EVERY image):
+- Name: Check the page text for context
+- Visual Description: ${profile.characterDescription}
+- Consistent Visual Anchors: ${profile.recurringVisualAnchors.join(", ")}
+- Style Notes: ${profile.styleNotes}
+
+Current Page:
+- Page Number: ${page.pageNumber}
+- Scene: ${page.text}
+
+REQUIREMENTS for this illustration:
+1. Style: ${GLOBAL_STYLE_PREFIX}
+2. Main subject: The child character (featured prominently)
+3. Setting: Reflect the page's story
+4. Mood: Warm, joyful, adventurous - match the page text
+5. Colors: Bright, vibrant, child-friendly palette
+6. No text or words in the image
+7. Character must be visually consistent with previous pages
+8. Include: The character's recurring visual anchors (${profile.recurringVisualAnchors.join(", ")})
+9. Quality: High-quality, polished illustration (NOT sketch, NOT black & white, NOT realistic photography)
+10. Lighting: Soft, glowing, magical lighting appropriate for children's book
+
+Return ONLY valid JSON (no markdown, no code blocks):
 {
   "pageNumber": ${page.pageNumber},
-  "prompt": "..."
+  "prompt": "Complete detailed prompt that includes the global style prefix and all requirements"
 }
 `.trim();
 }
