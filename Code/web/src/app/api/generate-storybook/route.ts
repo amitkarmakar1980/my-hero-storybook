@@ -3,13 +3,14 @@ import {
   buildCharacterProfilePrompt,
   buildStoryGenerationPrompt,
   buildStoryRefinementPrompt,
-  buildPageImagePromptPrompt,
+  buildCoverImagePrompt,
 } from "@/lib/prompts";
 import type {
   StoryInput,
   CharacterProfile,
   GeneratedStory,
   PageImagePrompt,
+  CoverImagePrompt,
 } from "@/types/storybook";
 
 function safeJsonParse<T>(text: string): T {
@@ -124,17 +125,20 @@ export async function POST(request: NextRequest) {
       buildStoryRefinementPrompt(JSON.stringify(storyDraft), body)
     );
 
-    const imagePrompts: PageImagePrompt[] = [];
-    for (const page of refinedStory.pages) {
-      const pagePrompt = await generateJson<PageImagePrompt>(
-        buildPageImagePromptPrompt(page, characterProfile, body.theme, refinedStory.title)
-      );
-      imagePrompts.push(pagePrompt);
-    }
+    const imagePrompts: PageImagePrompt[] = refinedStory.pages.map((p) => ({
+      pageNumber: p.pageNumber,
+    }));
+
+    // Build cover prompt directly — no Claude round-trip needed
+    const coverImagePrompt: CoverImagePrompt = {
+      prompt: buildCoverImagePrompt(characterProfile, refinedStory.title),
+    };
 
     return NextResponse.json({
+      childName: body.childName,
       characterProfile,
       story: refinedStory,
+      coverImagePrompt,
       imagePrompts,
     });
   } catch (error) {

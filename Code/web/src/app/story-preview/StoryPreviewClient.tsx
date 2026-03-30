@@ -6,6 +6,7 @@ import type {
   GeneratedStorybook,
   GeneratedStoryImage,
   PageImagePrompt,
+  CoverImagePrompt,
   CharacterProfile,
   GeneratedStory,
 } from "@/types/storybook";
@@ -17,7 +18,7 @@ const SESSION_KEY = "heroStorybookDraft";
 function isGeneratedStorybook(value: unknown): value is GeneratedStorybook {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (!("characterProfile" in v) || !("story" in v) || !("imagePrompts" in v)) return false;
+  if (!("childName" in v) || !("characterProfile" in v) || !("story" in v) || !("coverImagePrompt" in v) || !("imagePrompts" in v)) return false;
   const story = v.story as Record<string, unknown> | null;
   return (
     typeof story === "object" &&
@@ -41,12 +42,20 @@ function readStorybookDraft(): GeneratedStorybook | null {
 
 // ── Page image state ──────────────────────────────────────────────────────────
 
+// ── Page image state ──────────────────────────────────────────────────────
+
 type PageImageState =
   | { status: "loading" }
   | { status: "success"; imageUrl: string }
   | { status: "error"; error: string };
 
-// ── API helper ────────────────────────────────────────────────────────────────
+type PageImageRecord = {
+  state: PageImageState;
+  isInvalid?: boolean;
+  invalidReason?: string;
+};
+
+// ── API helpers ───────────────────────────────────────────────────────────────
 
 async function fetchPageImages(
   characterProfile: CharacterProfile,
@@ -54,89 +63,127 @@ async function fetchPageImages(
   imagePrompts: PageImagePrompt[],
   signal?: AbortSignal
 ): Promise<GeneratedStoryImage[]> {
-  try {
-    const res = await fetch("/api/generate-story-images", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ characterProfile, story, imagePrompts }),
-      signal,
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`Image generation failed (${res.status}):`, errorText);
-      throw new Error(`Image generation failed (${res.status})`);
-    }
-
-    const data = (await res.json()) as { images: GeneratedStoryImage[] };
-    if (process.env.NODE_ENV === "development") {
-      console.log("Image generation successful:", data);
-    }
-    return data.images;
-  } catch (err) {
-    // Silently ignore AbortError — component unmounted or navigation happened
-    if (err instanceof Error && err.name === "AbortError") {
-      if (process.env.NODE_ENV === "development") {
-        console.log("Image generation request was aborted");
-      }
-      throw err;
-    }
-    if (process.env.NODE_ENV === "development") {
-      console.error("fetchPageImages error:", err);
-    }
-    throw err;
-  }
+  const res = await fetch("/api/generate-story-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ characterProfile, story, imagePrompts }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Image generation failed (${res.status})`);
+  const data = (await res.json()) as { images: GeneratedStoryImage[] };
+  return data.images;
 }
 
-// ── Per-page image display ────────────────────────────────────────────────────
+async function fetchCoverImage(
+  coverImagePrompt: CoverImagePrompt,
+  signal?: AbortSignal
+): Promise<GeneratedStoryImage> {
+  const res = await fetch("/api/generate-story-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ coverImagePrompt }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Cover image generation failed (${res.status})`);
+  const data = (await res.json()) as { images: GeneratedStoryImage[] };
+  return data.images[0];
+}
+
+// ── Spinner SVG ───────────────────────────────────────────────────────────────
+
+function Spinner({ className }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className ?? "w-6 h-6"}`}
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <title>Loading</title>
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
+// ── Page image component ──────────────────────────────────────────────────────
 
 function PageImage({
   pageNumber,
   state,
+  isInvalid,
+  invalidReason,
   onRetry,
 }: {
   pageNumber: number;
   state: PageImageState | undefined;
+  isInvalid?: boolean;
+  invalidReason?: string;
   onRetry: (pageNumber: number) => void;
 }) {
+  // Invalid image — show quality gate fallback
+  if (isInvalid) {
+    return (
+      <div
+        className="w-full aspect-[4/5] rounded-2xl overflow-hidden
+                   flex flex-col items-center justify-center gap-4 px-6 text-center
+                   bg-gradient-to-br from-[#FBF1E3] to-[#f8f3ea] border border-[#FFD5C0]/40"
+        role="status"
+        aria-live="polite"
+        aria-label={`Page ${pageNumber} illustration needs improvement`}
+      >
+        <div className="text-5xl opacity-20">✨</div>
+        <div>
+          <h3 className="text-base font-semibold text-[#171E45] mb-1">
+            This page needs a better illustration
+          </h3>
+          <p className="text-xs text-[#020002]/60">
+            {invalidReason || "Quality improvement needed"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRetry(pageNumber)}
+          className="mt-2 rounded-full bg-[#FC800A] text-white text-sm font-semibold px-4 py-2
+                     shadow-[0_4px_14px_rgba(252,128,10,0.35)]
+                     hover:bg-[#e5720a] hover:-translate-y-0.5
+                     focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                     active:scale-[0.97] transition-all duration-200"
+        >
+          Regenerate ↺
+        </button>
+      </div>
+    );
+  }
+
   if (!state || state.status === "loading") {
     return (
       <div
-        className="w-full aspect-square rounded-2xl bg-[#FBF1E3] border-2 border-[#FFD5C0]
+        className="w-full aspect-[4/5] rounded-2xl overflow-hidden
                    flex flex-col items-center justify-center gap-3"
-        role="img"
+        style={{ background: "linear-gradient(160deg, #f5ede0 0%, #fce5c8 50%, #f5ede0 100%)" }}
+        role="status"
+        aria-live="polite"
         aria-label={`Generating illustration for page ${pageNumber}`}
       >
-        <svg
-          className="animate-spin w-7 h-7 text-[#FC800A]"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <title>Loading</title>
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-        <span className="text-xs text-[#020202]/40 font-medium">Painting illustration…</span>
+        <Spinner className="w-7 h-7 text-[#FC800A]/50" />
+        <span className="text-sm text-[#020002]/50 font-medium">Painting illustration…</span>
       </div>
     );
   }
 
   if (state.status === "success") {
     return (
-      <div className="w-full aspect-square rounded-2xl overflow-hidden">
+      <div className="w-full aspect-[4/5] overflow-hidden rounded-2xl
+                      shadow-[0_8px_32px_rgba(23,30,69,0.15)] duration-300">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={state.imageUrl}
           alt={`Illustration for page ${pageNumber}`}
           className="w-full h-full object-cover"
           width={512}
-          height={512}
+          height={640}
         />
       </div>
     );
@@ -145,89 +192,83 @@ function PageImage({
   // error state
   return (
     <div
-      className="w-full aspect-square rounded-2xl bg-[#FBF1E3] border-2 border-dashed border-[#FFD5C0]
-                 flex flex-col items-center justify-center gap-3 px-4 text-center"
-      role="img"
+      className="w-full aspect-[4/5] rounded-2xl bg-[#FBF1E3] border border-[#FFD5C0]/40
+                 flex flex-col items-center justify-center gap-4 px-6 text-center"
+      role="status"
+      aria-live="polite"
       aria-label={`Illustration failed for page ${pageNumber}`}
     >
-      <span className="text-3xl opacity-30" aria-hidden="true">
-        🎨
-      </span>
+      <span className="text-5xl opacity-20">🎨</span>
       <div>
-        <span className="text-xs text-[#020202]/40 font-medium leading-snug block">
+        <span className="text-sm text-[#171E45] font-semibold leading-snug block">
           Illustration couldn&apos;t load
         </span>
-        <span className="text-[10px] text-[#020202]/30 mt-1 block break-words">
+        <span className="text-xs text-[#020002]/60 mt-1 block break-words">
           {state.error}
         </span>
       </div>
       <button
         type="button"
         onClick={() => onRetry(pageNumber)}
-        className="text-xs font-semibold text-[#FC800A] underline underline-offset-2
-                   hover:text-[#e0700a] transition-colors duration-150
-                   focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+        className="rounded-full bg-[#FC800A] text-white text-sm font-semibold px-4 py-2
+                   shadow-[0_4px_14px_rgba(252,128,10,0.35)]
+                   hover:bg-[#e5720a] hover:-translate-y-0.5
+                   focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                   active:scale-[0.97] transition-all duration-200"
       >
-        Try again
+        Regenerate ↺
       </button>
     </div>
   );
 }
 
-// ── Storybook page row ────────────────────────────────────────────────────────
+// ── Story page spread ────────────────────────────────────────────────────────
 
-function StoryPageRow({
+function StoryPageSpread({
   pageNumber,
   pageText,
-  imageOnLeft,
-  imageState,
+  imageData,
   onRetry,
 }: {
   pageNumber: number;
   pageText: string;
-  imageOnLeft: boolean;
-  imageState: PageImageState | undefined;
+  imageData: PageImageRecord | undefined;
   onRetry: (pageNumber: number) => void;
 }) {
-  const imageBlock = (
-    <div className="w-full md:w-[45%] flex-shrink-0">
-      <PageImage pageNumber={pageNumber} state={imageState} onRetry={onRetry} />
-    </div>
-  );
-
-  const textBlock = (
-    <div className="flex-1 flex flex-col justify-center gap-3 py-2">
-      <span
-        className="text-xs font-semibold tracking-widest text-[#FC800A]/60 uppercase"
-        aria-label={`Page ${pageNumber}`}
-      >
-        Page {pageNumber}
-      </span>
-      <p
-        className="text-[#171E45] text-lg md:text-xl leading-relaxed"
-        style={{ fontFamily: "var(--font-roboto)" }}
-      >
-        {pageText}
-      </p>
-    </div>
-  );
+  const state = imageData?.state;
+  const isInvalid = imageData?.isInvalid ?? false;
+  const invalidReason = imageData?.invalidReason;
 
   return (
-    <div className="flex flex-col md:flex-row items-center gap-7 md:gap-10">
-      {imageOnLeft ? (
-        <>
-          {imageBlock}
-          {textBlock}
-        </>
-      ) : (
-        <>
-          <div className="w-full md:hidden">{imageBlock}</div>
-          <div className="hidden md:block flex-1">{textBlock}</div>
-          <div className="hidden md:block w-[45%] flex-shrink-0">{imageBlock}</div>
-          <div className="md:hidden flex-1">{textBlock}</div>
-        </>
-      )}
-    </div>
+    <article className="mb-24 md:mb-32">
+      {/* Illustration with quality gate */}
+      <PageImage
+        pageNumber={pageNumber}
+        state={state}
+        isInvalid={isInvalid}
+        invalidReason={invalidReason}
+        onRetry={onRetry}
+      />
+
+      {/* Page text — improved typography and spacing */}
+      <div className="mt-10 px-3 md:px-6 max-w-2xl mx-auto">
+        {/* Page number pill */}
+        <div className="flex items-center gap-3 mb-5">
+          <span
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full
+                       bg-[#FC800A]/15 text-[#FC800A] text-xs font-bold flex-shrink-0"
+          >
+            {pageNumber}
+          </span>
+          <div className="flex-1 h-px bg-[#FFD5C0]/60" aria-hidden="true" />
+        </div>
+
+        {/* Story text — larger, better line height, higher contrast */}
+        <p className="text-lg md:text-xl leading-relaxed md:leading-8 text-[#171E45] max-w-xl">
+          {pageText}
+        </p>
+      </div>
+    </article>
   );
 }
 
@@ -236,27 +277,51 @@ function StoryPageRow({
 export default function StoryPreviewClient() {
   const router = useRouter();
   const [draft, setDraft] = useState<GeneratedStorybook | null>(null);
-  const [pageImages, setPageImages] = useState<Record<number, PageImageState>>({});
+  const [coverImageState, setCoverImageState] = useState<PageImageState>({ status: "loading" });
+  const [pageImages, setPageImages] = useState<Record<number, PageImageRecord>>({});
+  const [simProgress, setSimProgress] = useState(0);
 
-  // Merge API results into per-page image state
+  // ── Illustration loading progress ─────────────────────────────────────────
+  const totalPages = draft?.imagePrompts.length ?? 0;
+  const pagesLoadedCount = Object.values(pageImages).filter(
+    (r) => r.state.status !== "loading"
+  ).length;
+  const pagesLoaded = totalPages > 0 && pagesLoadedCount === totalPages;
+  const coverLoaded = coverImageState.status !== "loading";
+  const allImagesLoaded = draft !== null && pagesLoaded && coverLoaded;
+  const realProgress = allImagesLoaded ? 100 : pagesLoaded ? 90 : 0;
+  const displayProgress = Math.max(simProgress, realProgress);
+
+  // ── Apply image results with quality validation support
   const applyImageResults = useCallback((results: GeneratedStoryImage[]) => {
     setPageImages((prev) => {
       const next = { ...prev };
       for (const result of results) {
-        if (result.imageUrl) {
-          next[result.pageNumber] = { status: "success", imageUrl: result.imageUrl };
+        const pageNum = result.pageNumber;
+        let state: PageImageState;
+        if (result.imageUrl && result.quality?.isValid) {
+          // Valid image — show it
+          state = { status: "success", imageUrl: result.imageUrl };
+        } else if (result.imageUrl && !result.quality?.isValid) {
+          // Invalid image after retries — show quality gate fallback UI
+          state = { status: "error", error: "Invalid after retries" };
+        } else if (result.error) {
+          // API error or generation failed
+          state = { status: "error", error: result.error };
         } else {
-          next[result.pageNumber] = {
-            status: "error",
-            error: result.error ?? "Unknown error",
-          };
+          state = { status: "error", error: "Unknown error" };
         }
+        
+        // Check quality flag from new API response format
+        const isInvalid = result.quality?.isValid === false;
+        const invalidReason = result.quality?.invalidReason || result.quality?.qualityFlags?.[0];
+        
+        next[pageNum] = { state, isInvalid, invalidReason };
       }
       return next;
     });
   }, []);
 
-  // Load draft on mount, kick off all-page image generation
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
@@ -269,189 +334,261 @@ export default function StoryPreviewClient() {
           if (isMounted) router.replace("/create");
           return;
         }
-
         if (!isMounted) return;
         setDraft(data);
 
-        // Mark every page as loading immediately so text renders right away
-        const initial: Record<number, PageImageState> = {};
+        const initial: Record<number, PageImageRecord> = {};
         for (const p of data.imagePrompts) {
-          initial[p.pageNumber] = { status: "loading" };
+          initial[p.pageNumber] = { state: { status: "loading" } };
         }
         setPageImages(initial);
 
         try {
-          const results = await fetchPageImages(
-            data.characterProfile,
-            data.story,
-            data.imagePrompts,
-            signal
-          );
+          const results = await fetchPageImages(data.characterProfile, data.story, data.imagePrompts, signal);
           if (!isMounted || signal.aborted) return;
           applyImageResults(results);
         } catch (err) {
-          // Silently ignore AbortError — component unmounted or navigation happened
-          if (err instanceof Error && err.name === "AbortError") {
-            return;
-          }
+          if (err instanceof Error && err.name === "AbortError") return;
           if (!isMounted || signal.aborted) return;
-          // Whole request failed — mark all still-loading pages as error
           setPageImages((prev) => {
             const next = { ...prev };
             for (const key of Object.keys(next)) {
               const n = Number(key);
-              if (next[n].status === "loading") {
-                next[n] = { status: "error", error: "Request failed" };
+              if (next[n].state.status === "loading") {
+                next[n] = { state: { status: "error", error: "Request failed" } };
               }
             }
             return next;
           });
         }
+
+        try {
+          const coverResult = await fetchCoverImage(data.coverImagePrompt, signal);
+          if (!isMounted || signal.aborted) return;
+          if (coverResult.imageUrl) {
+            setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
+          } else {
+            setCoverImageState({ status: "error", error: coverResult.error ?? "Unknown error" });
+          }
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
+          if (!isMounted || signal.aborted) return;
+          setCoverImageState({ status: "error", error: "Cover generation failed" });
+        }
       } catch (err) {
-        console.error("Error in loadData:", err);
+        if (process.env.NODE_ENV === "development") console.error("Error in loadData:", err);
       }
     };
 
     loadData();
-
     return () => {
       isMounted = false;
       controller.abort();
     };
   }, [router, applyImageResults]);
 
-  // Retry a single failed page
   const handleRetry = useCallback(
     async (pageNumber: number) => {
       if (!draft) return;
       const prompt = draft.imagePrompts.find((p) => p.pageNumber === pageNumber);
       if (!prompt) return;
-
-      setPageImages((prev) => ({ ...prev, [pageNumber]: { status: "loading" } }));
+      setPageImages((prev) => ({ ...prev, [pageNumber]: { state: { status: "loading" } } }));
       try {
         const results = await fetchPageImages(draft.characterProfile, draft.story, [prompt]);
         applyImageResults(results);
-      } catch (err) {
-        // Silently ignore AbortError
-        if (err instanceof Error && err.name === "AbortError") {
-          return;
-        }
+      } catch {
         setPageImages((prev) => ({
           ...prev,
-          [pageNumber]: { status: "error", error: "Retry failed" },
+          [pageNumber]: { state: { status: "error", error: "Retry failed" } },
         }));
       }
     },
     [draft, applyImageResults]
   );
 
-  // ── Loading state while sessionStorage read resolves ──
+  // ── Simulated illustration progress ticker ────────────────────────────────
+  // Dependencies on primitive state values instead of derived computations to prevent unnecessary reruns
+  useEffect(() => {
+    if (allImagesLoaded || !draft) return;
+    const interval = setInterval(() => {
+      setSimProgress((prev) => {
+        const target = pagesLoaded ? 93 : 82;
+        const rate = pagesLoaded ? 0.6 : 0.22;
+        return Math.min(prev + rate, target);
+      });
+    }, 300);
+    return () => clearInterval(interval);
+  }, [totalPages, pagesLoadedCount]);
+
+  const handleCoverRetry = useCallback(async () => {
+    if (!draft) return;
+    setCoverImageState({ status: "loading" });
+    try {
+      const coverResult = await fetchCoverImage(draft.coverImagePrompt);
+      if (coverResult.imageUrl) {
+        setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
+      } else {
+        setCoverImageState({ status: "error", error: coverResult.error ?? "Unknown error" });
+      }
+    } catch {
+      setCoverImageState({ status: "error", error: "Cover retry failed" });
+    }
+  }, [draft]);
+
+  // ── Loading skeleton ──
 
   if (!draft) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <svg
-            className="animate-spin w-8 h-8 text-[#FC800A]"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <title>Loading</title>
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          <p className="text-[#020202]/50 text-sm">Loading your story…</p>
+      <div className="flex items-center justify-center py-40">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="w-9 h-9 text-[#FC800A]" />
+          <p className="text-[#020202]/40 text-sm">Loading your story…</p>
         </div>
       </div>
     );
   }
 
   const { story } = draft;
+  const heroName = draft.childName.split(" ")[0];
+
+  const progressMessage = pagesLoaded
+    ? "Painting the cover illustration…"
+    : displayProgress < 25
+    ? "Setting up the canvas…"
+    : displayProgress < 55
+    ? "Painting your illustrations…"
+    : displayProgress < 80
+    ? "Adding fine details…"
+    : "Almost done painting…";
 
   return (
     <>
-      {/* ── Story title hero ─────────────────────────────────────────────────── */}
-      <div className="bg-[#FBF1E3] border-b border-[#FFD5C0]">
-        <div className="mx-auto max-w-2xl px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[#FC800A]/70 mb-2">
-            A story starring your little hero
+      {/* ── Story title ──────────────────────────────────────────────────────── */}
+      <div className="bg-gradient-to-b from-[#FBF1E3] to-[#f8f3ea]">
+        <div className="mx-auto max-w-2xl px-5 py-16 md:py-20 text-center">
+          <p className="text-xs font-semibold text-[#FC800A] tracking-widest uppercase mb-4 letter-spacing">
+            ✨ A story starring your little hero ✨
           </p>
           <h1
-            className="text-4xl md:text-5xl text-[#171E45] leading-tight tracking-[-0.025em]"
+            className="text-5xl md:text-6xl lg:text-7xl text-[#171E45] leading-tight tracking-[-0.03em] mb-6"
             style={{ fontFamily: "var(--font-rowdies)" }}
           >
             {story.title}
           </h1>
-          <p className="mt-3 text-base text-[#020202]/60 leading-relaxed max-w-md mx-auto italic">
+          <p className="text-lg md:text-xl text-[#020202]/70 leading-relaxed max-w-2xl mx-auto italic font-light">
             {story.coverText}
           </p>
         </div>
       </div>
 
-      {/* ── Story pages ──────────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-3xl px-4 py-12 pb-6 flex flex-col gap-12">
-        {story.pages.map((page, index) => (
-          <div
-            key={page.pageNumber}
-            className="bg-white rounded-3xl border border-[#FFD5C0]/60
-                       shadow-[0_4px_20px_rgba(0,0,0,0.05)] p-6 md:p-8"
-          >
-            <StoryPageRow
-              pageNumber={page.pageNumber}
-              pageText={page.text}
-              imageOnLeft={index % 2 === 0}
-              imageState={pageImages[page.pageNumber]}
-              onRetry={handleRetry}
-            />
-          </div>
-        ))}
+      {/* ── Front cover ──────────────────────────────────────────────────────── */}
+      <div className="bg-[#f8f3ea] pt-12 pb-8">
+        <div className="max-w-xl mx-auto px-4">
+          <PageImage pageNumber={0} state={coverImageState} onRetry={handleCoverRetry} />
+        </div>
       </div>
 
-      {/* ── Actions ──────────────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-3xl px-4 pb-16">
-        <div
-          className="rounded-3xl bg-[#FBF1E3] border border-[#FFD5C0] p-6 md:p-8
-                      flex flex-col sm:flex-row items-center justify-between gap-4"
-        >
-          <div>
+      {/* ── Story pages ──────────────────────────────────────────────────────── */}
+      <main className="bg-[#f8f3ea]">
+        <section className="max-w-3xl mx-auto px-4 pt-16 pb-12">
+          {story.pages.map((page) => (
+            <StoryPageSpread
+              key={page.pageNumber}
+              pageNumber={page.pageNumber}
+              pageText={page.text}
+              imageData={pageImages[page.pageNumber]}
+              onRetry={handleRetry}
+            />
+          ))}
+        </section>
+      </main>
+
+      {/* ── Ending ───────────────────────────────────────────────────────────── */}
+      <div className="bg-[#f8f3ea] py-20">
+        <div className="max-w-2xl mx-auto px-6">
+          <div className="flex flex-col items-center text-center gap-6 py-12 rounded-3xl bg-gradient-to-b from-[#FBF1E3]/50 to-[#FBF1E3]/20">
+            <div className="flex items-center gap-3 text-3xl md:text-4xl" aria-hidden="true">
+              <span>✨</span>
+              <span>✦</span>
+              <span>✨</span>
+            </div>
             <p
-              className="text-lg text-[#171E45] font-semibold"
+              className="text-3xl md:text-4xl text-[#171E45] leading-snug max-w-lg tracking-[-0.01em]"
               style={{ fontFamily: "var(--font-rowdies)" }}
             >
-              {story.title}
+              And somewhere out there, another adventure was already waiting for{" "}
+              <span className="text-[#FC800A]">{heroName}</span>.
             </p>
-            <p className="text-sm text-[#020202]/50 mt-0.5">Your personalized storybook is ready</p>
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => router.push("/create")}
-              className="rounded-full border-2 border-[#FFD5C0] bg-white px-5 py-2.5
-                         text-sm font-semibold text-[#171E45]
-                         hover:border-[#FC800A]/40 hover:bg-[#FCF7EE]
-                         transition-[background-color,border-color] duration-200
-                         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
-            >
-              ← Back to edit
-            </button>
-            <button
-              type="button"
-              title="PDF export coming soon"
-              className="rounded-full bg-[#FC800A] text-white px-5 py-2.5
-                         text-sm font-semibold opacity-60 cursor-not-allowed"
-              aria-disabled="true"
-            >
-              Download PDF
-            </button>
+            <p className="text-sm uppercase tracking-[0.15em] text-[#020202]/40 mt-2">
+              The End
+            </p>
           </div>
         </div>
       </div>
+
+      {/* ── Action bar ───────────────────────────────────────────────────────── */}
+      <div className="bg-gradient-to-b from-[#f8f3ea] to-[#FBF1E3] pb-20 pt-12">
+        <div className="mx-auto max-w-2xl px-6 flex flex-col sm:flex-row items-center justify-center gap-5">
+          <button
+            type="button"
+            onClick={() => router.push("/create")}
+            className="rounded-full bg-[#FC800A] px-8 py-4 text-base font-semibold text-white w-full sm:w-auto
+                       shadow-[0_6px_20px_rgba(252,128,10,0.38)]
+                       hover:bg-[#e5720a] hover:-translate-y-0.5
+                       hover:shadow-[0_8px_26px_rgba(252,128,10,0.48)]
+                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                       active:scale-[0.97] transition-all duration-200"
+          >
+            ✦ Create another story
+          </button>
+          <button
+            type="button"
+            title="PDF export coming soon"
+            className="rounded-full border-2 border-[#020202]/10 bg-white/60 px-8 py-4 text-base font-semibold text-[#171E45] w-full sm:w-auto
+                       cursor-not-allowed opacity-50"
+            aria-disabled="true"
+          >
+            Download PDF
+            <span className="ml-2 text-xs font-normal opacity-70">(coming soon)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Illustration progress — sticky bottom bar ─────────────────────── */}
+      {!allImagesLoaded && (
+        <div className="fixed bottom-0 inset-x-0 z-20">
+          <div
+            className="bg-[#FBF1E3]/95 backdrop-blur-sm border-t border-[#FFD5C0]"
+            style={{ boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}
+          >
+            <div className="mx-auto max-w-2xl px-5 py-3.5 flex items-center gap-3">
+              <span aria-hidden="true" className="text-lg flex-shrink-0">🎨</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-medium text-[#171E45]/65 truncate">
+                    {progressMessage}
+                  </span>
+                  <span className="text-xs text-[#020202]/30 ml-2 flex-shrink-0 tabular-nums">
+                    {Math.round(displayProgress)}%
+                  </span>
+                </div>
+                <div
+                  className="h-1.5 rounded-full overflow-hidden"
+                  style={{ background: "rgba(255,213,192,0.5)" }}
+                >
+                  <div
+                    className="h-full rounded-full transition-[width] duration-500 ease-out"
+                    style={{
+                      width: `${displayProgress}%`,
+                      background: "linear-gradient(to right, #FC800A, #FFB27A)",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -4,43 +4,44 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
   return (
     <button
       type="button"
-      className="relative overflow-hidden rounded-3xl p-7 flex flex-col gap-5 text-left w-full
-                 shadow-[0_4px_20px_rgba(0,0,0,0.06)]
-                 hover:scale-[1.025] hover:shadow-[0_14px_36px_rgba(0,0,0,0.13)]
+      className="group relative overflow-hidden rounded-3xl p-7 flex flex-col gap-5 text-left w-full
+                 shadow-[0_4px_20px_rgba(0,0,0,0.05)]
+                 hover:scale-[1.025] hover:shadow-[0_16px_44px_rgba(0,0,0,0.12)]
                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
                  active:scale-[0.99]
                  transition-all duration-300 cursor-pointer"
       style={{ backgroundColor: theme.bgColor }}
       aria-label={`Select ${theme.label} as your story theme`}
     >
-      {/* Radial glow in top-right corner */}
+      {/* Radial glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute top-0 right-0 w-36 h-36 opacity-20 rounded-full"
+        className="pointer-events-none absolute top-0 right-0 w-40 h-40 opacity-25 rounded-full
+                   transition-opacity duration-300 group-hover:opacity-40"
         style={{
           background: `radial-gradient(circle, ${theme.glowColor} 0%, transparent 70%)`,
           transform: "translate(30%, -30%)",
         }}
       />
 
-      {/* Ambient decoration emojis */}
-      <span aria-hidden="true" className="absolute top-5 right-6 text-xl opacity-30">
+      {/* Ambient decoration */}
+      <span aria-hidden="true" className="absolute top-5 right-6 text-xl opacity-25 group-hover:opacity-40 transition-opacity duration-300">
         {theme.decorations[1]}
       </span>
-      <span aria-hidden="true" className="absolute bottom-8 right-8 text-sm opacity-20">
+      <span aria-hidden="true" className="absolute bottom-8 right-7 text-sm opacity-15 group-hover:opacity-25 transition-opacity duration-300">
         {theme.decorations[2]}
       </span>
 
-      {/* Theme icon */}
+      {/* Icon */}
       <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl
-                   shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+        className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl
+                   shadow-[0_2px_10px_rgba(0,0,0,0.07)] transition-transform duration-300 group-hover:scale-105"
         style={{ backgroundColor: theme.iconBg }}
       >
         {theme.icon}
       </div>
 
-      {/* Title and description */}
+      {/* Text content */}
       <div className="flex flex-col gap-2 flex-1">
         <h3
           className="text-2xl leading-tight text-[#171E45]"
@@ -48,19 +49,27 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
         >
           {theme.label}
         </h3>
-        <p className="text-sm leading-relaxed text-[#171E45]/60">
+        <p className="text-sm leading-relaxed text-[#171E45]/55">
           {theme.description}
         </p>
       </div>
 
-      {/* Theme identifier pill */}
-      <div className="pt-1">
+      {/* Bottom row: tag + arrow */}
+      <div className="flex items-center justify-between pt-1">
         <span
           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
           style={{ backgroundColor: theme.tagBg, color: theme.tagText }}
         >
           <span aria-hidden="true">{theme.decorations[0]}</span>
           {theme.label}
+        </span>
+        <span
+          className="text-sm font-semibold opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0
+                     transition-all duration-200"
+          style={{ color: theme.accentColor }}
+          aria-hidden="true"
+        >
+          Choose →
         </span>
       </div>
     </button>
@@ -83,12 +92,12 @@ export default function ThemesSection() {
           >
             Choose your adventure
           </h2>
-          <p className="text-base text-[#020202]/60 max-w-md leading-relaxed">
-            Every story starts with a world. Pick a theme and we&apos;ll craft a tale made just for your little one.
+          <p className="text-base text-[#020202]/55 max-w-sm leading-relaxed">
+            Every great story begins with a world. Pick a theme and your child becomes the hero.
           </p>
         </div>
 
-        {/* Theme cards grid */}
+        {/* Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {STORY_THEMES.map((theme) => (
             <StoryThemeCard key={theme.label} theme={theme} />

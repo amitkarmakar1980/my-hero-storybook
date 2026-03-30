@@ -2,35 +2,25 @@
 
 import { useRouter } from "next/navigation";
 
-const BRAND_ORANGE = "#FC800A";
-const BRAND_NAVY = "#171E45";
-const BRAND_PEACH = "#FFD5C0";
-const BRAND_CREAM = "#FBF1E3";
-const BRAND_LAVENDER = "#F0EFFE";
-
 export default function HeroSection() {
   const router = useRouter();
+
   return (
     <section id="hero-story-section" className="relative overflow-hidden bg-[#FCF7EE]">
-      {/* Layered radial depth — three overlapping halos for visual richness */}
+      {/* Radial depth halos */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-32 -right-32 h-[500px] w-[500px] rounded-full"
-        style={{ background: `radial-gradient(circle, ${BRAND_PEACH} 0%, transparent 65%)`, opacity: 0.35 }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute top-1/3 -right-10 h-64 w-64 rounded-full"
-        style={{ background: `radial-gradient(circle, ${BRAND_ORANGE} 0%, transparent 70%)`, opacity: 0.08 }}
+        style={{ background: "radial-gradient(circle, #FFD5C0 0%, transparent 65%)", opacity: 0.4 }}
       />
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -bottom-20 -left-20 h-80 w-80 rounded-full"
-        style={{ background: `radial-gradient(circle, ${BRAND_ORANGE} 0%, transparent 70%)`, opacity: 0.15 }}
+        style={{ background: "radial-gradient(circle, #FC800A 0%, transparent 70%)", opacity: 0.12 }}
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+      <div className="mx-auto max-w-6xl px-5 py-12 md:py-14">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
 
           {/* ── Left: copy and CTAs ── */}
           <div className="flex flex-col gap-5">
@@ -41,7 +31,7 @@ export default function HeroSection() {
               <span className="text-sm font-medium text-[#FC800A]">Personalized for your child</span>
             </div>
 
-            {/* Hero headline — Rowdies display font, premium tight spacing */}
+            {/* Headline */}
             <h1
               className="text-5xl md:text-[3.6rem] leading-[1.08] tracking-[-0.025em] text-[#171E45]"
               style={{ fontFamily: "var(--font-rowdies)" }}
@@ -58,23 +48,23 @@ export default function HeroSection() {
                 >
                   <path
                     d="M2 8C40 2.5 90 1 218 4"
-                    stroke={BRAND_ORANGE}
+                    stroke="#FC800A"
                     strokeWidth="3"
                     strokeLinecap="round"
                     opacity="0.4"
                   />
                 </svg>
               </span>{" "}
-              of a story
+              of their own story
             </h1>
 
-            {/* Subtext — Roboto, body weight */}
+            {/* Subtext */}
             <p className="text-lg text-[#020202]/65 leading-relaxed max-w-[420px]">
-              Create a personalized illustrated story in minutes using your child&apos;s name,
-              photo, and favorite adventure theme.
+              Upload a photo, pick a theme, and we&apos;ll create a beautifully illustrated storybook
+              with your child as the star.
             </p>
 
-            {/* CTA group */}
+            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-3 pt-1">
               <button
                 id="landing-primary-cta"
@@ -85,131 +75,161 @@ export default function HeroSection() {
                            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
                            active:scale-[0.97] transition-all duration-200"
               >
-                Create Your Story
+                Create your story →
               </button>
-              <button
-                className="px-4 py-3.5 text-base font-medium text-[#171E45]/70
-                           underline underline-offset-4 decoration-[#171E45]/25
-                           hover:text-[#FC800A] hover:decoration-[#FC800A]/40
+              <a
+                href="#story-themes-section"
+                className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#171E45]/12
+                           px-6 py-3.5 text-base font-medium text-[#171E45]/65
+                           hover:border-[#FC800A]/30 hover:text-[#FC800A]
                            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171E45]
-                           active:opacity-70 transition-all duration-200"
+                           transition-all duration-200"
               >
-                See examples
-              </button>
+                See story themes
+              </a>
             </div>
-
-            <p className="text-sm italic text-[#020202]/55 -mt-1 max-w-xs leading-snug">
-              Watch their face light up when they see themselves in the story.
-            </p>
 
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[#88B520] text-base" aria-hidden="true">✓</span>
-              <p className="text-sm font-medium text-[#020202]/65 tracking-wide">
-                No sign-up required &middot; Ready in minutes
+              <p className="text-sm font-medium text-[#020202]/55">
+                No account needed &middot; Ready in about 30 seconds
               </p>
             </div>
           </div>
 
-          {/* ── Right: story preview panel ── */}
+          {/* ── Right: storybook cover visual ── */}
           <div className="flex justify-center md:justify-end">
-            <div id="story-preview-panel" className="relative w-80 md:w-96">
+            <div className="relative">
 
-              <div className="rounded-3xl bg-white border-2 border-[#FFD5C0] shadow-[0_20px_60px_rgba(252,128,10,0.14)] overflow-hidden">
+              {/* Ambient glow behind book */}
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 -z-10 scale-110 blur-3xl opacity-25 rounded-full"
+                style={{ background: "radial-gradient(circle, #FC800A 0%, #FFD5C0 60%, transparent 100%)" }}
+              />
 
+              {/* Storybook cover card */}
+              <div
+                className="relative w-60 sm:w-64 md:w-72 rounded-[24px] overflow-hidden"
+                style={{
+                  boxShadow:
+                    "0 32px 80px rgba(23,30,69,0.22), 0 8px 24px rgba(252,128,10,0.16), 0 0 0 1px rgba(255,213,192,0.7)",
+                }}
+              >
+                {/* Illustration area — adventure night sky */}
                 <div
-                  className="px-5 py-3 flex items-center justify-between"
-                  style={{ backgroundColor: BRAND_ORANGE }}
+                  className="relative overflow-hidden"
+                  style={{
+                    height: "260px",
+                    background: "linear-gradient(170deg, #0f1b4d 0%, #1a2d6d 45%, #2a4a9f 80%, #1c3a7a 100%)",
+                  }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-lg" aria-hidden="true">📖</span>
+                  {/* Star field */}
+                  {[
+                    { top: "12%", left: "18%", size: "text-xs", opacity: 0.8 },
+                    { top: "8%", left: "60%", size: "text-[10px]", opacity: 0.6 },
+                    { top: "22%", right: "14%", size: "text-[8px]", opacity: 0.7 },
+                    { top: "35%", left: "8%", size: "text-[8px]", opacity: 0.5 },
+                    { top: "15%", left: "40%", size: "text-[10px]", opacity: 0.9 },
+                    { top: "50%", right: "8%", size: "text-xs", opacity: 0.4 },
+                    { top: "42%", left: "28%", size: "text-[8px]", opacity: 0.6 },
+                  ].map((s, i) => (
                     <span
-                      className="text-white text-sm font-semibold"
-                      style={{ fontFamily: "var(--font-rowdies)" }}
+                      key={i}
+                      aria-hidden="true"
+                      className={`absolute ${s.size} text-yellow-200 select-none`}
+                      style={{ top: s.top, left: s.left, right: s.right, opacity: s.opacity }}
                     >
-                      Emma&apos;s Space Adventure
+                      ★
                     </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 rounded-full bg-white/40" />
-                    <div className="w-2 h-2 rounded-full bg-white/40" />
-                    <div className="w-2 h-2 rounded-full bg-white" />
-                  </div>
-                </div>
+                  ))}
 
-                <div className="grid grid-cols-2 gap-2 p-3">
-                  <div
-                    className="col-span-1 row-span-2 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 min-h-[140px]"
-                    style={{ backgroundColor: BRAND_NAVY }}
+                  {/* Magic sparkles */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute text-yellow-300/60 text-lg select-none"
+                    style={{ top: "28%", left: "62%" }}
                   >
+                    ✦
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="absolute text-yellow-200/40 text-sm select-none"
+                    style={{ top: "60%", left: "15%" }}
+                  >
+                    ✦
+                  </span>
+
+                  {/* Adventure scene */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <span className="text-6xl" aria-hidden="true">🚀</span>
                     <div
-                      className="w-14 h-14 rounded-full border-2 border-white shadow-md flex items-center justify-center"
-                      style={{ backgroundColor: BRAND_ORANGE }}
-                    >
-                      <span className="text-2xl">👧</span>
-                    </div>
-                    <div className="text-center">
-                      <div
-                        className="text-white text-xs font-bold"
-                        style={{ fontFamily: "var(--font-rowdies)" }}
-                      >
-                        Emma
-                      </div>
-                      <div className="text-white/60 text-[10px]">Space Captain</div>
-                    </div>
-                    <div className="flex gap-1">
-                      <span className="text-[10px]">⭐</span>
-                      <span className="text-[10px]">✨</span>
-                      <span className="text-[10px]">⭐</span>
-                    </div>
-                  </div>
-
-                  <div
-                    className="rounded-2xl p-2 flex flex-col items-center justify-center gap-1"
-                    style={{ backgroundColor: BRAND_CREAM }}
-                  >
-                    <span className="text-3xl">🚀</span>
-                    <div className="w-full space-y-1">
-                      <div className="h-1.5 rounded-full bg-[#FC800A]/30" />
-                      <div className="h-1.5 rounded-full bg-[#FC800A]/20 w-4/5" />
-                    </div>
-                  </div>
-
-                  <div
-                    className="rounded-2xl p-2 flex flex-col justify-center"
-                    style={{ backgroundColor: BRAND_LAVENDER }}
-                  >
-                    <div className="bg-white rounded-xl rounded-bl-none px-2 py-1.5 shadow-sm">
-                      <p className="text-[10px] text-[#171E45] font-medium leading-tight">
-                        &ldquo;To infinity and beyond!&rdquo;
-                      </p>
-                    </div>
-                    <div
-                      className="w-0 h-0 ml-3"
+                      className="w-14 h-14 rounded-full flex items-center justify-center text-2xl
+                                 border-[3px] border-white/80"
                       style={{
-                        borderLeft: "6px solid transparent",
-                        borderRight: "0",
-                        borderTop: "6px solid white",
+                        background: "linear-gradient(135deg, #FC800A 0%, #e5720a 100%)",
+                        boxShadow: "0 4px 16px rgba(252,128,10,0.5)",
                       }}
-                    />
+                      aria-label="Child hero"
+                    >
+                      👧
+                    </div>
                   </div>
+
+                  {/* Gradient fade into title strip */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
+                    style={{ background: "linear-gradient(to bottom, transparent, #FBF1E3)" }}
+                  />
                 </div>
 
-                <div className="px-4 py-2.5 border-t border-[#FFD5C0] flex items-center justify-between">
-                  <div className="flex gap-0.5">
-                    {[...Array(5)].map((_, i) => (
-                      <span key={i} className="text-[10px]">⭐</span>
+                {/* Title strip */}
+                <div className="bg-[#FBF1E3] px-5 pt-1 pb-5">
+                  <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[#FC800A] mb-1">
+                    A Hero Storybook
+                  </p>
+                  <h3
+                    className="text-xl text-[#171E45] leading-tight"
+                    style={{ fontFamily: "var(--font-rowdies)" }}
+                  >
+                    Emma&apos;s Space Adventure
+                  </h3>
+                  {/* Page thumbnail row */}
+                  <div className="flex items-center gap-1.5 mt-3">
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                      <div
+                        key={n}
+                        className="w-7 h-8 rounded-md flex items-center justify-center text-[9px] font-bold
+                                   text-[#FC800A]"
+                        style={{ background: "rgba(252,128,10,0.10)" }}
+                        aria-hidden="true"
+                      >
+                        {n}
+                      </div>
                     ))}
+                    <span className="text-[10px] text-[#020202]/35 ml-1">pages</span>
                   </div>
-                  <span className="text-[10px] text-[#020202]/40 font-medium">Page 1 of your story</span>
                 </div>
               </div>
 
-              <div className="absolute -top-3 -right-3 flex items-center gap-1.5 rounded-full bg-white border border-[#FFD5C0] shadow-md px-3 py-1.5">
-                <span className="text-sm">🌟</span>
+              {/* Floating badge */}
+              <div
+                className="absolute -top-3 -left-4 rounded-full bg-white border border-[#FFD5C0]
+                           shadow-[0_4px_16px_rgba(0,0,0,0.10)] px-3 py-1.5 flex items-center gap-1.5"
+              >
+                <span className="text-sm" aria-hidden="true">🌟</span>
                 <span className="text-xs font-semibold text-[#171E45]">Your child&apos;s story</span>
               </div>
 
-              <span className="absolute -bottom-3 -left-2 text-2xl" aria-hidden="true">✨</span>
+              {/* Floating page count badge */}
+              <div
+                className="absolute -bottom-3 right-5 rounded-full px-3 py-1.5
+                           shadow-[0_4px_14px_rgba(252,128,10,0.4)]"
+                style={{ background: "#FC800A" }}
+              >
+                <span className="text-xs font-semibold text-white">6 illustrated pages</span>
+              </div>
             </div>
           </div>
 
