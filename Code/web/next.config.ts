@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    proxyClientMaxBodySize: "25mb",
+  },
   images: {
     remotePatterns: [
       {
@@ -14,6 +17,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "**.gstatic.com",
+      },
+      {
+        protocol: "https",
+        hostname: "**.supabase.co",
       },
     ],
   },

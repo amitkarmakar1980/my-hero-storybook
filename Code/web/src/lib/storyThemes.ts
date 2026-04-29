@@ -14,6 +14,7 @@ export interface StoryThemeConfig {
   tagText: string;
   glowColor: string;
   decorations: [string, string, string];
+  premium?: boolean;
 }
 
 export const STORY_THEMES: StoryThemeConfig[] = [
@@ -58,5 +59,50 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     tagText: "#B02A62",
     glowColor: "#F96EA0",
     decorations: ["✨", "🌟", "🦋"],
+  },
+  {
+    label: "Underwater Kingdom",
+    icon: "🐠",
+    description:
+      "Dive into a shimmering ocean realm. Your child befriends dolphins, discovers sunken treasure, and becomes the hero of the deep.",
+    shortDescription: "Oceans, merfolk, and hidden treasure",
+    bgColor: "#EBF7FF",
+    accentColor: "#0EA5E9",
+    iconBg: "rgba(14,165,233,0.15)",
+    tagBg: "rgba(14,165,233,0.12)",
+    tagText: "#0369A1",
+    glowColor: "#0EA5E9",
+    decorations: ["🌊", "🐚", "🪸"],
+    premium: true,
+  },
+  {
+    label: "Dinosaur World",
+    icon: "🦕",
+    description:
+      "Travel back 65 million years. Your child rides a friendly triceratops, hatches dinosaur eggs, and saves a prehistoric valley.",
+    shortDescription: "Dinos, volcanoes, and big adventures",
+    bgColor: "#F0F7EC",
+    accentColor: "#65A30D",
+    iconBg: "rgba(101,163,13,0.15)",
+    tagBg: "rgba(101,163,13,0.12)",
+    tagText: "#3F6212",
+    glowColor: "#65A30D",
+    decorations: ["🌿", "🥚", "🌋"],
+    premium: true,
+  },
+  {
+    label: "Fairy Tale Castle",
+    icon: "🏰",
+    description:
+      "Enter an enchanted kingdom of knights and royalty. Your child outwits the dragon, rescues the kingdom, and is crowned a legend.",
+    shortDescription: "Knights, dragons, and royal quests",
+    bgColor: "#F5F0FF",
+    accentColor: "#7C3AED",
+    iconBg: "rgba(124,58,237,0.15)",
+    tagBg: "rgba(124,58,237,0.12)",
+    tagText: "#5B21B6",
+    glowColor: "#7C3AED",
+    decorations: ["👑", "⚔️", "🌹"],
+    premium: true,
   },
 ];

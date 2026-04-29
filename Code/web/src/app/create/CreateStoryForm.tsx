@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession, signIn } from "next-auth/react";
 import { STORY_THEMES } from "@/lib/storyThemes";
 import type { AgeBand, StoryTheme, StoryTrait } from "@/types/storybook";
 
@@ -109,6 +110,9 @@ function ValidationError({ id, message }: { id?: string; message: string }) {
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export default function CreateStoryForm() {
+  const { data: session } = useSession();
+  const isSignedIn = !!session?.user?.id;
+
   const [storyData, setStoryData] = useState<StoryCreationData>({
     childName: "",
     ageBand: "",
@@ -222,6 +226,14 @@ export default function CreateStoryForm() {
     e.preventDefault();
     setSubmitAttempted(true);
     if (!isFormValid) return;
+
+    // Block premium themes for guests
+    const selectedThemeConfig = STORY_THEMES.find((t) => t.label === storyData.selectedTheme);
+    if (selectedThemeConfig?.premium && !isSignedIn) {
+      signIn("google");
+      return;
+    }
+
     setIsLoading(true);
     setApiError("");
     try {
@@ -233,7 +245,29 @@ export default function CreateStoryForm() {
         uploadedImageMimeType = photoFile.type;
         uploadedImageName = photoFile.name;
       }
-      const res = await fetch("/api/generate-storybook", {
+
+      // Upload photo to profile (if signed in) in parallel with story generation
+      const photoUploadPromise = (async () => {
+        if (!uploadedImageBase64 || !isSignedIn) return undefined;
+        try {
+          const res = await fetch("/api/profile/photos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              photoBase64: uploadedImageBase64,
+              filename: uploadedImageName ?? photoFile?.name ?? "child-photo.jpg",
+              mimeType: uploadedImageMimeType ?? photoFile?.type ?? "image/jpeg",
+            }),
+          });
+          if (!res.ok) return undefined;
+          const { photo } = await res.json() as { photo: { url: string } };
+          return photo.url as string;
+        } catch {
+          return undefined;
+        }
+      })();
+
+      const storyPromise = fetch("/api/generate-storybook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -244,9 +278,18 @@ export default function CreateStoryForm() {
           ...(uploadedImageBase64 ? { uploadedImageBase64, uploadedImageMimeType, uploadedImageName } : {}),
         }),
       });
+
+      const [res, childPhotoUrl] = await Promise.all([storyPromise, photoUploadPromise]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Story generation failed. Please try again.");
-      sessionStorage.setItem("heroStorybookDraft", JSON.stringify(data));
+
+      sessionStorage.setItem("heroStorybookDraft", JSON.stringify({
+        ...data,
+        theme: storyData.selectedTheme,
+        childPhotoUrl: childPhotoUrl ?? undefined,
+        childPhotoBase64: uploadedImageBase64 ?? undefined,
+        childPhotoMimeType: uploadedImageMimeType ?? undefined,
+      }));
       router.push("/story-preview");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
@@ -382,17 +425,22 @@ export default function CreateStoryForm() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" role="radiogroup" aria-label="Story theme" aria-required="true">
           {STORY_THEMES.map((theme) => {
             const isSelected = storyData.selectedTheme === theme.label;
+            const isLocked = !!theme.premium && !isSignedIn;
             return (
               <button
                 key={theme.label}
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                onClick={() => handleThemeSelect(theme.label as StoryTheme)}
+                onClick={() => {
+                  if (isLocked) { signIn("google"); return; }
+                  handleThemeSelect(theme.label as StoryTheme);
+                }}
                 suppressHydrationWarning
                 className={`relative rounded-2xl p-5 flex flex-col gap-3 text-left
                             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
                             transition-all duration-200
+                            ${isLocked ? "opacity-75 cursor-pointer" : ""}
                             ${isSelected
                               ? "border-2 scale-[1.03] shadow-[0_8px_28px_rgba(0,0,0,0.12)]"
                               : "border-2 border-transparent hover:border-[#FFD5C0] hover:-translate-y-0.5 hover:shadow-md"
@@ -402,8 +450,22 @@ export default function CreateStoryForm() {
                   borderColor: isSelected ? theme.accentColor : undefined,
                 }}
               >
+                {/* Lock badge for premium themes */}
+                {isLocked && (
+                  <span
+                    className="absolute top-3 right-3 flex items-center gap-1 rounded-full px-2 py-0.5
+                               bg-[#171E45]/10 text-[#171E45]/60 text-[10px] font-semibold"
+                    aria-label="Sign in required"
+                  >
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M4 4.5V3a2 2 0 1 1 4 0v1.5h.5A1.5 1.5 0 0 1 10 6v4a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10V6A1.5 1.5 0 0 1 3.5 4.5H4Zm1.5-1.5a.5.5 0 0 1 1 0V4.5h-1V3Z" clipRule="evenodd"/>
+                    </svg>
+                    Sign in
+                  </span>
+                )}
+
                 {/* Selected checkmark */}
-                {isSelected && (
+                {isSelected && !isLocked && (
                   <span
                     className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center
                                justify-center text-white text-[10px] font-bold"
@@ -543,7 +605,9 @@ export default function CreateStoryForm() {
 
         <p className="mt-3 text-xs text-[#020202]/35 flex items-center gap-1.5">
           <span aria-hidden="true">🔒</span>
-          Your photo is used only to generate this story and is never stored.
+          {isSignedIn
+            ? "Photo saved to your profile library for future stories."
+            : "Your photo is used only to generate this story and is never stored."}
         </p>
       </StoryFormSection>
 
@@ -602,7 +666,9 @@ export default function CreateStoryForm() {
 
         {!isLoading && (
           <p className="text-xs text-[#020202]/35 text-center">
-            No account needed &middot; Ready in about 30 seconds
+            {isSignedIn
+              ? "All 6 story worlds unlocked · Ready in about 30 seconds"
+              : "Sign in to unlock 3 more story worlds · Ready in about 30 seconds"}
           </p>
         )}
       </div>

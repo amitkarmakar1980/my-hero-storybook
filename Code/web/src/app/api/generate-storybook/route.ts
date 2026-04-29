@@ -13,6 +13,8 @@ import type {
   CoverImagePrompt,
 } from "@/types/storybook";
 
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.5-flash";
+
 function safeJsonParse<T>(text: string): T {
   // Gemini sometimes wraps responses in markdown code fences — strip them before parsing.
   const cleaned = text
@@ -64,7 +66,7 @@ async function generateJson<T>(
 
   console.log("Calling Gemini API with request body...");
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

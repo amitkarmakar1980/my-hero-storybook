@@ -3,7 +3,10 @@ export type AgeBand = "3-4" | "5-6" | "7-8";
 export type StoryTheme =
   | "Space Explorer"
   | "Jungle Adventure"
-  | "Magic School";
+  | "Magic School"
+  | "Underwater Kingdom"
+  | "Dinosaur World"
+  | "Fairy Tale Castle";
 
 export type StoryTrait = "Brave" | "Curious" | "Funny" | "Kind";
 

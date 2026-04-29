@@ -13,13 +13,13 @@
 
   /* Typography tokens */
   --font-display: var(--font-rowdies);   /* Hero headline, brand name, card titles */
-  --font-body: var(--font-roboto);       /* All other UI text */
+  --font-body: var(--font-poppins);      /* All other UI text */
 }
 
 body {
   background-color: #FCF7EE;
   color: #020202;
-  font-family: var(--font-roboto), sans-serif;
+  font-family: var(--font-poppins), sans-serif;
   line-height: 1.6;
 }
 

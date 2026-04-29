@@ -7,7 +7,7 @@ import type { StoryInput, CharacterProfile, StoryPage } from "@/types/storybook"
 // Set to "advanced" to re-enable retry reinforcement and stricter validation.
 // =============================================================================
 
-export const IMAGE_PIPELINE_MODE: "baseline" | "advanced" = "baseline";
+export const IMAGE_PIPELINE_MODE: "baseline" | "advanced" = "advanced";
 
 // =============================================================================
 // PART 1 — BASELINE IMAGE PROMPT BUILDERS
@@ -39,9 +39,14 @@ export function buildCharacterAnchor(profile: CharacterProfile): string {
     .filter(Boolean)
     .join("\n");
 
+  const recurringAnchors = profile.recurringVisualAnchors?.length
+    ? `Recurring visual anchors:\n${profile.recurringVisualAnchors.map((anchor) => `- ${anchor}`).join("\n")}`
+    : "";
+
   return `CHILD HERO CHARACTER — keep identical across every page:
 ${profile.characterDescription}
 ${traits}
+${recurringAnchors}
 
 Maintain the same face, hairstyle, skin tone, age appearance, and body proportions on every page. This is the same child throughout the entire book.`;
 }
@@ -53,7 +58,7 @@ export function buildScenePrompt(page: StoryPage): string {
   return `SCENE FOR PAGE ${page.pageNumber}:
 "${page.text}"
 
-Illustrate the child as the clear focal point of this story moment. Show the setting, action, and emotion described above. Include full environmental context — not an isolated portrait.`;
+Illustrate the child as the clear focal point of this story moment. Show the setting, action, and emotion described above. Include full environmental context, cinematic composition, expressive poses, layered foreground/background detail, and a strong sense of motion or wonder where appropriate. This must read like a premium storybook spread, not a generic portrait.`;
 }
 
 /**
@@ -111,7 +116,7 @@ export function buildCoverImagePrompt(
     "",
     buildCharacterAnchor(profile),
     "",
-    `COVER SCENE: The child hero stands prominently at the center in a confident, adventurous pose that captures the spirit of their story. Magical, rich background with warm lighting and vibrant colors. Leave visual space at the top of the image — the title "${storyTitle}" will be added by the app and must not appear inside the illustration.`,
+    `COVER SCENE: The child hero stands prominently at the center in a confident, adventurous pose that captures the spirit of their story. The background should feel grand, magical, and specific to the story world, with warm lighting, rich color contrast, and premium bookstore-cover composition. Leave visual space at the top of the image — the title "${storyTitle}" will be added by the app and must not appear inside the illustration.`,
     "",
     buildShortNegatives(),
     "",

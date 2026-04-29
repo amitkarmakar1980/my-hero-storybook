@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import type {
   GeneratedStorybook,
   GeneratedStoryImage,
@@ -14,6 +15,13 @@ import type {
 // ── Session storage helpers ───────────────────────────────────────────────────
 
 const SESSION_KEY = "heroStorybookDraft";
+
+interface DraftExtras {
+  theme?: string;
+  childPhotoUrl?: string;
+  childPhotoBase64?: string;
+  childPhotoMimeType?: string;
+}
 
 function isGeneratedStorybook(value: unknown): value is GeneratedStorybook {
   if (typeof value !== "object" || value === null) return false;
@@ -29,12 +37,12 @@ function isGeneratedStorybook(value: unknown): value is GeneratedStorybook {
   );
 }
 
-function readStorybookDraft(): GeneratedStorybook | null {
+function readStorybookDraft(): (GeneratedStorybook & DraftExtras) | null {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    return isGeneratedStorybook(parsed) ? parsed : null;
+    return isGeneratedStorybook(parsed) ? (parsed as GeneratedStorybook & DraftExtras) : null;
   } catch {
     return null;
   }
@@ -274,12 +282,18 @@ function StoryPageSpread({
 
 // ── Main client component ─────────────────────────────────────────────────────
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 export default function StoryPreviewClient() {
   const router = useRouter();
-  const [draft, setDraft] = useState<GeneratedStorybook | null>(null);
+  const { data: session } = useSession();
+  const [draft, setDraft] = useState<(GeneratedStorybook & DraftExtras) | null>(null);
   const [coverImageState, setCoverImageState] = useState<PageImageState>({ status: "loading" });
   const [pageImages, setPageImages] = useState<Record<number, PageImageRecord>>({});
   const [simProgress, setSimProgress] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [savedStoryId, setSavedStoryId] = useState<string | null>(null);
+  const hasSavedRef = useRef(false);
 
   // ── Illustration loading progress ─────────────────────────────────────────
   const totalPages = draft?.imagePrompts.length ?? 0;
@@ -299,12 +313,8 @@ export default function StoryPreviewClient() {
       for (const result of results) {
         const pageNum = result.pageNumber;
         let state: PageImageState;
-        if (result.imageUrl && result.quality?.isValid) {
-          // Valid image — show it
+        if (result.imageUrl && result.quality?.isValid !== false) {
           state = { status: "success", imageUrl: result.imageUrl };
-        } else if (result.imageUrl && !result.quality?.isValid) {
-          // Invalid image after retries — show quality gate fallback UI
-          state = { status: "error", error: "Invalid after retries" };
         } else if (result.error) {
           // API error or generation failed
           state = { status: "error", error: result.error };
@@ -420,6 +430,75 @@ export default function StoryPreviewClient() {
     return () => clearInterval(interval);
   }, [totalPages, pagesLoadedCount]);
 
+  // ── Auto-save when all images loaded and user is signed in ───────────────
+  useEffect(() => {
+    if (!allImagesLoaded || !session?.user?.id || !draft || hasSavedRef.current) return;
+    hasSavedRef.current = true;
+    setSaveStatus("saving");
+
+    const coverBase64 = coverImageState.status === "success" ? coverImageState.imageUrl : undefined;
+    const pageImagesBase64: Record<number, string> = {};
+    for (const [k, v] of Object.entries(pageImages)) {
+      if (v.state.status === "success") {
+        pageImagesBase64[Number(k)] = v.state.imageUrl;
+      }
+    }
+
+    fetch("/api/stories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: draft.story.title,
+        coverText: draft.story.coverText,
+        theme: draft.theme ?? "",
+        childName: draft.childName,
+        childPhotoUrl: draft.childPhotoUrl,
+        childPhotoBase64: draft.childPhotoBase64,
+        childPhotoMimeType: draft.childPhotoMimeType,
+        coverImageBase64: coverBase64,
+        pageImagesBase64,
+        storyJson: draft.story,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data: { storyId?: string }) => {
+        if (data.storyId) {
+          setSavedStoryId(data.storyId);
+          setSaveStatus("saved");
+        } else {
+          setSaveStatus("error");
+        }
+      })
+      .catch(() => setSaveStatus("error"));
+  }, [allImagesLoaded, session?.user?.id]);
+
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!draft || isPdfGenerating) return;
+    setIsPdfGenerating(true);
+    try {
+      const { downloadStoryPdf } = await import("@/lib/downloadPdf");
+      const coverUrl =
+        coverImageState.status === "success" ? coverImageState.imageUrl : undefined;
+      const pageImageData: Record<number, { imageUrl?: string }> = {};
+      for (const [k, v] of Object.entries(pageImages)) {
+        pageImageData[Number(k)] = {
+          imageUrl: v.state.status === "success" ? v.state.imageUrl : undefined,
+        };
+      }
+      await downloadStoryPdf({
+        title: draft.story.title,
+        coverText: draft.story.coverText,
+        story: draft.story,
+        coverImageUrl: coverUrl,
+        pageImages: pageImageData,
+      });
+    } finally {
+      setIsPdfGenerating(false);
+    }
+  }, [draft, coverImageState, pageImages, isPdfGenerating]);
+
   const handleCoverRetry = useCallback(async () => {
     if (!draft) return;
     setCoverImageState({ status: "loading" });
@@ -526,6 +605,42 @@ export default function StoryPreviewClient() {
         </div>
       </div>
 
+      {/* ── Save status banner ───────────────────────────────────────────────── */}
+      {session?.user && saveStatus !== "idle" && (
+        <div className="bg-[#f8f3ea] pt-4">
+          <div className="mx-auto max-w-2xl px-6">
+            {saveStatus === "saving" && (
+              <div className="flex items-center gap-2.5 rounded-2xl bg-[#FBF1E3] border border-[#FFD5C0] px-4 py-3 text-sm text-[#171E45]/70">
+                <Spinner className="w-4 h-4 text-[#FC800A]" />
+                Saving to your library…
+              </div>
+            )}
+            {saveStatus === "saved" && savedStoryId && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F0F9E0] border border-[#88B520]/30 px-4 py-3 text-sm">
+                <span className="flex items-center gap-2 text-[#4A6810] font-medium">
+                  <svg className="w-4 h-4 text-[#88B520]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd"/>
+                  </svg>
+                  Saved to your library!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => router.push("/profile")}
+                  className="text-xs font-semibold text-[#88B520] hover:underline underline-offset-2"
+                >
+                  View in profile →
+                </button>
+              </div>
+            )}
+            {saveStatus === "error" && (
+              <div className="rounded-2xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+                Could not save to library. You can still download the PDF.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Action bar ───────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-b from-[#f8f3ea] to-[#FBF1E3] pb-20 pt-12">
         <div className="mx-auto max-w-2xl px-6 flex flex-col sm:flex-row items-center justify-center gap-5">
@@ -543,13 +658,28 @@ export default function StoryPreviewClient() {
           </button>
           <button
             type="button"
-            title="PDF export coming soon"
+            onClick={handleDownloadPdf}
+            disabled={!allImagesLoaded || isPdfGenerating}
             className="rounded-full border-2 border-[#020202]/10 bg-white/60 px-8 py-4 text-base font-semibold text-[#171E45] w-full sm:w-auto
-                       cursor-not-allowed opacity-50"
-            aria-disabled="true"
+                       hover:border-[#FC800A]/40 hover:bg-white hover:-translate-y-0.5
+                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                       active:scale-[0.97] transition-all duration-200
+                       disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
           >
-            Download PDF
-            <span className="ml-2 text-xs font-normal opacity-70">(coming soon)</span>
+            {isPdfGenerating ? (
+              <span className="flex items-center justify-center gap-2">
+                <Spinner className="w-4 h-4 text-[#FC800A]" />
+                Generating PDF…
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#FC800A]" aria-hidden="true">
+                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                </svg>
+                Download PDF
+              </span>
+            )}
           </button>
         </div>
       </div>

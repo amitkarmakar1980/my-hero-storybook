@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Roboto, Rowdies } from "next/font/google";
+import { Poppins, Rowdies } from "next/font/google";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
-// Roboto: default UI font for all body text, labels, and interface copy
-const roboto = Roboto({
-  variable: "--font-roboto",
+const poppins = Poppins({
+  variable: "--font-poppins",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -30,12 +30,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${roboto.variable} ${rowdies.variable} h-full antialiased`}>
+    <html lang="en" className={`${poppins.variable} ${rowdies.variable} h-full antialiased`}>
       <head>
         <link rel="preconnect" href="https://generativelanguage.googleapis.com" />
         <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com" />
       </head>
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

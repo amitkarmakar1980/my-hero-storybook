@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 import { buildFinalImagePrompt, buildCoverImagePrompt, buildRetryImagePrompt } from "@/lib/prompts";
 import type {
   CharacterProfile,
@@ -28,6 +29,70 @@ function generatePlaceholderImageUrl(pageNumber: number, seed: string): string {
   return `https://api.dicebear.com/7.x/lorelei/svg?seed=${encodeURIComponent(`page-${pageNumber}-${b64}`)}&scale=80&backgroundColor=FCF7EE`;
 }
 
+const GEMINI_IMAGE_MODEL =
+  process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.0-flash-preview-image-generation";
+
+function extractGeneratedImagePart(response: any):
+  | { mimeType: string; data: string }
+  | undefined {
+  const parts = response?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) {
+    return undefined;
+  }
+
+  for (const part of parts) {
+    if (part?.thought) {
+      continue;
+    }
+
+    const inlineData = part?.inlineData;
+    if (inlineData?.data) {
+      return {
+        mimeType: inlineData.mimeType ?? "image/png",
+        data: inlineData.data,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+async function generateGeminiImage(prompt: string): Promise<{ mimeType: string; data: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY not configured");
+  }
+
+  const client = new GoogleGenAI({ apiKey });
+  const response = await client.models.generateContent({
+    model: GEMINI_IMAGE_MODEL,
+    contents: prompt,
+    config: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
+  });
+
+  console.log("[Gemini] Raw response candidates:", JSON.stringify(response?.candidates?.map((c: any) => ({
+    parts: c?.content?.parts?.map((p: any) => ({
+      hasText: !!p?.text,
+      hasInlineData: !!p?.inlineData,
+      inlineDataMime: p?.inlineData?.mimeType,
+      inlineDataLen: p?.inlineData?.data?.length,
+      thought: p?.thought,
+      keys: Object.keys(p || {}),
+    }))
+  })), null, 2));
+
+  const generatedImage = extractGeneratedImagePart(response);
+  if (!generatedImage) {
+    console.error("[Gemini] No image in response. Full response:", JSON.stringify(response, null, 2));
+    throw new Error("No image data returned");
+  }
+
+  return generatedImage;
+}
+
+
 // ── Baseline image generation — one attempt, no retry loops, no heuristics ───
 //
 // Only treats a page as failed when:
@@ -55,59 +120,22 @@ async function generatePageImage(
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instances: [{ prompt }] }),
-        signal: controller.signal,
-      }
-    );
-
+    const abortHandler = () => controller.abort();
+    controller.signal.addEventListener("abort", abortHandler, { once: true });
+    const generatedImagePromise = generateGeminiImage(prompt);
+    const generatedImage = await Promise.race([
+      generatedImagePromise,
+      new Promise<never>((_, reject) => {
+        controller.signal.addEventListener(
+          "abort",
+          () => reject(new Error("This operation was aborted")),
+          { once: true }
+        );
+      }),
+    ]);
     clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const statusCode = response.status;
-      let errorDetail = `HTTP ${statusCode}`;
-      try {
-        const text = await response.text();
-        errorDetail = `HTTP ${statusCode}: ${text.substring(0, 300)}`;
-      } catch {
-        // ignore
-      }
-      if (process.env.NODE_ENV === "development") {
-        console.log(`[Page ${pageNumber}] API error — ${errorDetail}`);
-      }
-      return {
-        pageNumber,
-        isPlaceholder: true,
-        error: errorDetail,
-        imageUrl: generatePlaceholderImageUrl(pageNumber, prompt),
-      };
-    }
-
-    const data = (await response.json()) as Record<string, unknown>;
-    const predictions = data.predictions as Array<Record<string, unknown>> | undefined;
-    const prediction = predictions?.[0];
-
-    if (!prediction?.bytesBase64Encoded) {
-      const errMsg =
-        (data.error as Record<string, unknown>)?.message?.toString() ??
-        "No image data returned";
-      if (process.env.NODE_ENV === "development") {
-        console.log(`[Page ${pageNumber}] Empty response — ${errMsg}`);
-      }
-      return {
-        pageNumber,
-        isPlaceholder: true,
-        error: errMsg,
-        imageUrl: generatePlaceholderImageUrl(pageNumber, prompt),
-      };
-    }
-
-    const mimeType = (prediction.mimeType as string | undefined) ?? "image/png";
-    const imageUrl = `data:${mimeType};base64,${prediction.bytesBase64Encoded}`;
+    controller.signal.removeEventListener("abort", abortHandler);
+    const imageUrl = `data:${generatedImage.mimeType};base64,${generatedImage.data}`;
 
     if (process.env.NODE_ENV === "development") {
       console.log(`[Page ${pageNumber}] ✓ Generated`);
@@ -117,9 +145,7 @@ async function generatePageImage(
   } catch (err) {
     clearTimeout(timeoutId);
     const message = err instanceof Error ? err.message : "Generation failed";
-    if (process.env.NODE_ENV === "development") {
-      console.error(`[Page ${pageNumber}] ✗`, message);
-    }
+    console.error(`[Page ${pageNumber}] ✗ GEMINI ERROR:`, message, err);
     return {
       pageNumber,
       isPlaceholder: true,
@@ -150,76 +176,43 @@ async function _generateValidatedPageImage(
     const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instances: [{ prompt: currentPrompt }] }),
-          signal: controller.signal,
-        }
-      );
+      const generatedImage = await Promise.race([
+        generateGeminiImage(currentPrompt),
+        new Promise<never>((_, reject) => {
+          controller.signal.addEventListener(
+            "abort",
+            () => reject(new Error("This operation was aborted")),
+            { once: true }
+          );
+        }),
+      ]);
       clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const statusCode = response.status;
-
-        if (statusCode === 404 || statusCode === 403 || statusCode === 400) {
-          return {
-            pageNumber,
-            isPlaceholder: true,
-            error: `API unavailable (${statusCode})`,
-            imageUrl: generatePlaceholderImageUrl(pageNumber, initialPrompt),
-          };
-        }
-
-        if (statusCode === 429) {
-          const retryAfter = response.headers.get("Retry-After");
-          const backoffMs = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : Math.min(5000 * Math.pow(2, attempt - 1), 30_000);
-          if (attempt < MAX_ATTEMPTS) {
-            await new Promise((r) => setTimeout(r, backoffMs));
-            continue;
-          }
-          return {
-            pageNumber,
-            isPlaceholder: true,
-            error: "Rate limited",
-            imageUrl: generatePlaceholderImageUrl(pageNumber, initialPrompt),
-          };
-        }
-
-        lastError = `API error (${statusCode})`;
-        if (attempt < MAX_ATTEMPTS) {
-          currentPrompt = buildRetryImagePrompt(initialPrompt, lastInvalidReason);
-          await new Promise((r) => setTimeout(r, 2000 * attempt));
-          continue;
-        }
-        break;
-      }
-
-      const data = (await response.json()) as Record<string, unknown>;
-      const predictions = data.predictions as Array<Record<string, unknown>> | undefined;
-      const prediction = predictions?.[0];
-
-      if (!prediction?.bytesBase64Encoded) {
-        lastError = "No image data returned";
-        if (attempt < MAX_ATTEMPTS) {
-          currentPrompt = buildRetryImagePrompt(initialPrompt, lastInvalidReason);
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
-          continue;
-        }
-        break;
-      }
-
-      const mimeType = (prediction.mimeType as string | undefined) ?? "image/png";
-      const imageUrl = `data:${mimeType};base64,${prediction.bytesBase64Encoded}`;
+      const imageUrl = `data:${generatedImage.mimeType};base64,${generatedImage.data}`;
       return { pageNumber, imageUrl };
     } catch (err) {
       clearTimeout(timeoutId);
       lastError = err instanceof Error ? err.message : "Unknown error";
+
+      if (
+        lastError.includes("429") ||
+        lastError.toLowerCase().includes("rate") ||
+        lastError.toLowerCase().includes("quota")
+      ) {
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, Math.min(5000 * Math.pow(2, attempt - 1), 30_000)));
+          continue;
+        }
+
+        return {
+          pageNumber,
+          isPlaceholder: true,
+          error: "Rate limited",
+          imageUrl: generatePlaceholderImageUrl(pageNumber, initialPrompt),
+        };
+      }
+
       if (attempt === MAX_ATTEMPTS) break;
+      currentPrompt = buildRetryImagePrompt(initialPrompt, lastInvalidReason);
     }
   }
 
@@ -240,7 +233,7 @@ export async function POST(request: NextRequest) {
 
     // Cover image request
     if (coverImagePrompt && !imagePrompts) {
-      const coverImage = await generatePageImage(0, coverImagePrompt.prompt);
+      const coverImage = await _generateValidatedPageImage(0, coverImagePrompt.prompt);
       return NextResponse.json({ images: [coverImage] } satisfies GenerateStoryImagesResponse);
     }
 
@@ -260,7 +253,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate each page sequentially with a 3-second gap to respect rate limits.
+    // Generate each page sequentially using advanced retry/backoff logic.
     const images: GeneratedStoryImage[] = [];
     for (const ip of imagePrompts) {
       const storyPage = story.pages.find((p) => p.pageNumber === ip.pageNumber);
@@ -273,7 +266,21 @@ export async function POST(request: NextRequest) {
         reinforceConsistency: ip.pageNumber > 1,
       });
 
-      const image = await generatePageImage(ip.pageNumber, prompt);
+      let image: GeneratedStoryImage;
+      try {
+        image = await _generateValidatedPageImage(ip.pageNumber, prompt);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (process.env.NODE_ENV === "development") {
+          console.error(`[Page ${ip.pageNumber}] Fatal error:`, message);
+        }
+        image = {
+          pageNumber: ip.pageNumber,
+          isPlaceholder: true,
+          error: message,
+          imageUrl: generatePlaceholderImageUrl(ip.pageNumber, prompt),
+        };
+      }
       images.push(image);
 
       // 3-second gap between pages to stay within API rate limits
