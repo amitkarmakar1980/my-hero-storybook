@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
+const ensuredBuckets = new Set<string>();
+
 export function createSupabaseServerClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,12 +10,37 @@ export function createSupabaseServerClient() {
   );
 }
 
+async function ensureBucketExists(bucket: string) {
+  if (ensuredBuckets.has(bucket)) {
+    return;
+  }
+
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.storage.getBucket(bucket);
+
+  if (!error && data) {
+    ensuredBuckets.add(bucket);
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(bucket, {
+    public: true,
+  });
+
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw new Error(`Storage bucket setup failed for ${bucket}: ${createError.message}`);
+  }
+
+  ensuredBuckets.add(bucket);
+}
+
 export async function uploadBase64Image(
   bucket: string,
   path: string,
   base64DataUrl: string
 ): Promise<string> {
   const supabase = createSupabaseServerClient();
+  await ensureBucketExists(bucket);
 
   // Strip the data URL prefix (e.g. "data:image/png;base64,")
   const matches = base64DataUrl.match(/^data:([^;]+);base64,(.+)$/);
