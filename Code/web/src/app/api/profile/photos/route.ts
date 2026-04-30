@@ -47,7 +47,7 @@ export async function GET() {
   });
 
   const resolvedPhotos = await Promise.all(
-    photos.map(async (photo) => ({
+    photos.map(async (photo: (typeof photos)[number]) => ({
       ...photo,
       storageUrl: photo.url,
       url: await resolveStorageUrl("child-photos", photo.url),
