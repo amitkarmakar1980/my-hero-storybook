@@ -107,6 +107,7 @@ export async function GET() {
       theme: true,
       childName: true,
       coverImageUrl: true,
+      storyJson: true,
       childPhotoUrl: true,
       pageImagesJson: true,
       createdAt: true,
@@ -120,7 +121,7 @@ export async function GET() {
         coverImageUrl: story.coverImageUrl ?? undefined,
         childPhotoUrl: story.childPhotoUrl ?? undefined,
         pageImagesJson: story.pageImagesJson as Record<number, { imageUrl: string }>,
-        characterPhotos: (story.storyJson as StoredStoryData).characterPhotos,
+        characterPhotos: (story.storyJson as unknown as StoredStoryData).characterPhotos,
       }),
     })),
   });

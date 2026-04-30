@@ -344,7 +344,7 @@ export function buildRetryImagePrompt(
   invalidReason: string | undefined,
   qualityFlags?: string[]
 ): string {
-  const reinforcement = buildRetryReinforcement(invalidReason, qualityFlags);
+  const reinforcement = buildRetryReinforcement(invalidReason);
   return `${reinforcement}\n\n---\n\nORIGINAL SCENE REQUIREMENTS (applied again):\n\n${originalPrompt}`.trim();
 }
 

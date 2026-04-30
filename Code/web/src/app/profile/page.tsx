@@ -38,6 +38,7 @@ export default async function ProfilePage() {
         theme: true,
         childName: true,
         coverImageUrl: true,
+        storyJson: true,
         childPhotoUrl: true,
         pageImagesJson: true,
         createdAt: true,
@@ -59,7 +60,7 @@ export default async function ProfilePage() {
 
   const fallbackStoryPhotos = stories
     .flatMap((story) => {
-      const storyJson = story.storyJson as StoredStoryData | null;
+      const storyJson = story.storyJson as unknown as StoredStoryData | null;
       const persistedPhotos = storyJson?.characterPhotos ?? [];
 
       if (persistedPhotos.length > 0) {
