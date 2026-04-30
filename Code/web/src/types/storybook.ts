@@ -10,17 +10,41 @@ export type StoryTheme =
 
 export type StoryTrait = "Brave" | "Curious" | "Funny" | "Kind";
 
+export interface StoryCharacterInput {
+  name: string;
+  age: number;
+  traits: StoryTrait[];
+}
+
+export interface CharacterPhotoInput {
+  characterName: string;
+  uploadedImageMimeType?: string;
+  uploadedImageBase64?: string;
+  uploadedImageName?: string;
+  persistedPhotoUrl?: string;
+}
+
+export interface PersistedCharacterPhoto {
+  characterName: string;
+  persistedPhotoUrl: string;
+  uploadedImageName?: string;
+}
+
 export interface StoryInput {
   childName: string;
-  ageBand: AgeBand;
+  characterNames?: string[];
+  characters?: StoryCharacterInput[];
+  characterPhotos?: CharacterPhotoInput[];
+  ageBand?: AgeBand;
   theme: StoryTheme;
-  traits: StoryTrait[];
+  traits?: StoryTrait[];
   uploadedImageMimeType?: string;
   uploadedImageBase64?: string;
   uploadedImageName?: string;
 }
 
 export interface CharacterProfile {
+  characterName: string;
   characterDescription: string;
   styleNotes: string;
   recurringVisualAnchors: string[];
@@ -46,6 +70,12 @@ export interface GeneratedStory {
   ending: string;
 }
 
+export interface StoredStoryData extends GeneratedStory {
+  characterNames?: string[];
+  characters?: StoryCharacterInput[];
+  characterPhotos?: PersistedCharacterPhoto[];
+}
+
 export interface PageImagePrompt {
   pageNumber: number;
   prompt?: string;
@@ -58,6 +88,10 @@ export interface CoverImagePrompt {
 
 export interface GeneratedStorybook {
   childName: string;
+  characterNames?: string[];
+  characters?: StoryCharacterInput[];
+  characterPhotos?: CharacterPhotoInput[];
+  characterProfiles?: CharacterProfile[];
   characterProfile: CharacterProfile;
   story: GeneratedStory;
   coverImagePrompt: CoverImagePrompt;

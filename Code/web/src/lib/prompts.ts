@@ -1,5 +1,53 @@
 // Prompts for story generation
-import type { StoryInput, CharacterProfile, StoryPage } from "@/types/storybook";
+import type { StoryInput, CharacterProfile, StoryPage, StoryCharacterInput } from "@/types/storybook";
+
+function normalizeProfiles(profileOrProfiles: CharacterProfile | CharacterProfile[]): CharacterProfile[] {
+  return Array.isArray(profileOrProfiles) ? profileOrProfiles : [profileOrProfiles];
+}
+
+function getCharacterNames(input: StoryInput): string[] {
+  const namesFromCharacters = input.characters?.map((character) => character.name.trim()).filter(Boolean) ?? [];
+  const names = namesFromCharacters.length > 0
+    ? namesFromCharacters
+    : input.characterNames?.map((name) => name.trim()).filter(Boolean) ?? [];
+  if (names.length > 0) {
+    return names;
+  }
+
+  return input.childName.trim() ? [input.childName.trim()] : [];
+}
+
+function getCharacterInputs(input: StoryInput): StoryCharacterInput[] {
+  if (input.characters && input.characters.length > 0) {
+    return input.characters
+      .map((character) => ({
+        ...character,
+        name: character.name.trim(),
+        traits: character.traits ?? [],
+      }))
+      .filter((character) => character.name);
+  }
+
+  const characterNames = getCharacterNames(input);
+  const fallbackTraits = input.traits ?? [];
+
+  return characterNames.map((name) => ({
+    name,
+    age: 6,
+    traits: fallbackTraits,
+  }));
+}
+
+function getCharacterInput(input: StoryInput, characterName: string): StoryCharacterInput | undefined {
+  return getCharacterInputs(input).find((character) => character.name === characterName);
+}
+
+function formatCharacterNames(names: string[]): string {
+  if (names.length === 0) return "the child hero";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
 
 // =============================================================================
 // PIPELINE MODE — controls which image prompt builder is used
@@ -25,30 +73,37 @@ export function buildBaseStylePrompt(): string {
 /**
  * Concise character anchor. One clear description block, one consistency rule.
  */
-export function buildCharacterAnchor(profile: CharacterProfile): string {
-  const traits = [
-    profile.appearanceAge   && `Age appearance: ${profile.appearanceAge}`,
-    profile.skinTone        && `Skin tone: ${profile.skinTone}`,
-    profile.faceShape       && `Face: ${profile.faceShape}`,
-    profile.hair            && `Hair: ${profile.hair}`,
-    profile.eyes            && `Eyes: ${profile.eyes}`,
-    profile.build           && `Build: ${profile.build}`,
-    profile.signatureFeatures && `Distinctive features: ${profile.signatureFeatures}`,
-    profile.defaultOutfit   && `Outfit: ${profile.defaultOutfit}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+export function buildCharacterAnchor(profile: CharacterProfile | CharacterProfile[]): string {
+  const profiles = normalizeProfiles(profile);
 
-  const recurringAnchors = profile.recurringVisualAnchors?.length
-    ? `Recurring visual anchors:\n${profile.recurringVisualAnchors.map((anchor) => `- ${anchor}`).join("\n")}`
-    : "";
+  return `CHARACTER IDENTITY LOCK — keep every named character consistent across every page:
+${profiles
+  .map((characterProfile, index) => {
+    const traits = [
+      characterProfile.appearanceAge && `Age appearance: ${characterProfile.appearanceAge}`,
+      characterProfile.skinTone && `Skin tone: ${characterProfile.skinTone}`,
+      characterProfile.faceShape && `Face: ${characterProfile.faceShape}`,
+      characterProfile.hair && `Hair: ${characterProfile.hair}`,
+      characterProfile.eyes && `Eyes: ${characterProfile.eyes}`,
+      characterProfile.build && `Build: ${characterProfile.build}`,
+      characterProfile.signatureFeatures && `Distinctive features: ${characterProfile.signatureFeatures}`,
+      characterProfile.defaultOutfit && `Outfit: ${characterProfile.defaultOutfit}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-  return `CHILD HERO CHARACTER — keep identical across every page:
-${profile.characterDescription}
+    const recurringAnchors = characterProfile.recurringVisualAnchors?.length
+      ? `Recurring visual anchors:\n${characterProfile.recurringVisualAnchors.map((anchor) => `- ${anchor}`).join("\n")}`
+      : "";
+
+    return `CHARACTER ${index + 1} — ${characterProfile.characterName}${index === 0 ? " (main character)" : ""}:
+${characterProfile.characterDescription}
 ${traits}
-${recurringAnchors}
+${recurringAnchors}`;
+  })
+  .join("\n\n")}
 
-Maintain the same face, hairstyle, skin tone, age appearance, and body proportions on every page. This is the same child throughout the entire book.`;
+Maintain each character's same face, hairstyle, skin tone, age appearance, and body proportions on every page. When multiple named characters appear together, keep them visually distinct and on-model.`;
 }
 
 /**
@@ -82,7 +137,7 @@ export function buildSimplePromptSelfCheck(): string {
  * Advanced mode: full validation and reinforcement (re-enable when prompt quality is stable).
  */
 export function buildFinalImagePrompt(
-  profile: CharacterProfile,
+  profile: CharacterProfile | CharacterProfile[],
   page: StoryPage,
   options?: { reinforceConsistency?: boolean }
 ): string {
@@ -108,15 +163,19 @@ export function buildFinalImagePrompt(
  * Dedicated cover image prompt. Simpler and focused on a hero moment.
  */
 export function buildCoverImagePrompt(
-  profile: CharacterProfile,
+  profile: CharacterProfile | CharacterProfile[],
   storyTitle: string
 ): string {
+  const profiles = normalizeProfiles(profile);
+  const mainCharacter = profiles[0]?.characterName ?? "the main character";
+  const supportingCharacters = profiles.slice(1).map((character) => character.characterName);
+
   return [
     `Premium children's picture book cover illustration. Full-color, warm, magical, visually striking. Strong central composition suitable for a book cover.`,
     "",
     buildCharacterAnchor(profile),
     "",
-    `COVER SCENE: The child hero stands prominently at the center in a confident, adventurous pose that captures the spirit of their story. The background should feel grand, magical, and specific to the story world, with warm lighting, rich color contrast, and premium bookstore-cover composition. Leave visual space at the top of the image — the title "${storyTitle}" will be added by the app and must not appear inside the illustration.`,
+    `COVER SCENE: ${mainCharacter} stands prominently at the center in a confident, adventurous pose that captures the spirit of the story.${supportingCharacters.length > 0 ? ` Include ${supportingCharacters.join(", ")} nearby as clearly recognizable supporting characters.` : ""} The background should feel grand, magical, and specific to the story world, with warm lighting, rich color contrast, and premium bookstore-cover composition. Leave visual space at the top of the image — the title "${storyTitle}" will be added by the app and must not appear inside the illustration.`,
     "",
     buildShortNegatives(),
     "",
@@ -196,35 +255,40 @@ If all ✓: Proceed with image generation. If any ✗: Revise, re-check, then ge
 }
 
 /** @internal Used by advanced mode only */
-function _buildCharacterAnchorAdvanced(profile: CharacterProfile): string {
+function _buildCharacterAnchorAdvanced(profile: CharacterProfile | CharacterProfile[]): string {
+  const profiles = normalizeProfiles(profile);
+
   return `
 CHARACTER IDENTITY LOCK — Inject verbatim on every page, no modifications:
 
-The child hero must maintain IDENTICAL visual identity across every page.
-
-Physical appearance (locked, unchanging):
-- Age appearance: ${profile.appearanceAge || "matches the uploaded photo"}
-- Face shape: ${profile.faceShape || "matches the uploaded photo"}
-- Skin tone: ${profile.skinTone || "matches the uploaded photo"}
-- Hair (style + color + texture): ${profile.hair || "matches the uploaded photo"}
-- Eye shape and color: ${profile.eyes || "matches the uploaded photo"}
-- Body build and proportions: ${profile.build || "matches the uploaded photo"}
-- Signature features: ${profile.signatureFeatures || "not specified"}
-- Default outfit: ${profile.defaultOutfit || "not specified"}
+${profiles
+  .map(
+    (characterProfile, index) => `Character ${index + 1}: ${characterProfile.characterName}${index === 0 ? " (main character)" : ""}
+- Age appearance: ${characterProfile.appearanceAge || "matches the uploaded photo"}
+- Face shape: ${characterProfile.faceShape || "matches the uploaded photo"}
+- Skin tone: ${characterProfile.skinTone || "matches the uploaded photo"}
+- Hair (style + color + texture): ${characterProfile.hair || "matches the uploaded photo"}
+- Eye shape and color: ${characterProfile.eyes || "matches the uploaded photo"}
+- Body build and proportions: ${characterProfile.build || "matches the uploaded photo"}
+- Signature features: ${characterProfile.signatureFeatures || "not specified"}
+- Default outfit: ${characterProfile.defaultOutfit || "not specified"}`
+  )
+  .join("\n\n")}
 
 MANDATORY CONSISTENCY RULES:
-→ Same face shape, facial proportions, and facial structure across all pages
-→ Same body type, height, and body proportions
+→ Keep every named character visually distinct and consistent across all pages
+→ Same face shape, facial proportions, and facial structure for each character
+→ Same body type, height, and body proportions for each character
 → Same skin tone; do not shift or alter
-→ Same hair color, style, and texture
+→ Same hair color, style, and texture for each character
 → Same age appearance on every page
-→ Show ONE main child hero on every page
+→ Keep the first character as the primary focal hero when multiple characters appear
 `.trim();
 }
 
 /** @internal Used by advanced mode only */
 function _buildAdvancedImagePrompt(
-  profile: CharacterProfile,
+  profile: CharacterProfile | CharacterProfile[],
   page: StoryPage,
   options?: { reinforceConsistency?: boolean }
 ): string {
@@ -256,8 +320,7 @@ FINALIZE: Generate one coherent, premium children's storybook illustration match
 }
 
 export function buildRetryReinforcement(
-  invalidReason: string | undefined,
-  qualityFlags?: string[]
+  invalidReason: string | undefined
 ): string {
   if (!invalidReason) {
     return `RETRY ATTEMPT — REINFORCED REQUIREMENTS:\nThe previous attempt did not meet quality standards. Apply stricter adherence to ALL conditions below:`;
@@ -289,17 +352,25 @@ export function buildRetryImagePrompt(
 // PART 3 — STORY GENERATION PROMPTS (unchanged)
 // =============================================================================
 
-export function buildCharacterProfilePrompt(input: StoryInput) {
+export function buildCharacterProfilePrompt(
+  input: StoryInput,
+  characterName: string,
+  allCharacterNames: string[]
+) {
+  const supportingCharacters = allCharacterNames.filter((name) => name !== characterName);
+  const characterInput = getCharacterInput(input, characterName);
+
   return `
 You are creating a reusable illustrated character profile for a children's storybook.
 
-Child name: ${input.childName}
-Age band: ${input.ageBand}
+Character name: ${characterName}
+${supportingCharacters.length > 0 ? `Other named characters in the story: ${supportingCharacters.join(", ")}` : "Other named characters in the story: None"}
+Exact age: ${characterInput?.age ?? "unknown"}
 Theme: ${input.theme}
-Traits: ${input.traits.join(", ") || "None"}
+Traits: ${characterInput?.traits.join(", ") || input.traits?.join(", ") || "None"}
 
 Task:
-Analyze the uploaded child photo and produce a stylized, child-safe character profile for a colorful illustrated storybook.
+Analyze the uploaded child photo and produce a stylized, child-safe character profile for this character in a colorful illustrated storybook.
 
 Requirements:
 - Focus only on visible visual traits
@@ -307,9 +378,12 @@ Requirements:
 - Do not infer sensitive attributes
 - Do not mention realism or photography
 - Make the result reusable across multiple pages
+- The uploaded photo is only for ${characterName}
+- The illustrated character must read visually as ${characterInput?.age ?? "the stated"} years old
 
 Return strict JSON:
 {
+  "characterName": "${characterName}",
   "characterDescription": "...",
   "styleNotes": "...",
   "recurringVisualAnchors": ["...", "...", "..."],
@@ -325,22 +399,36 @@ Return strict JSON:
 `.trim();
 }
 
-export function buildStoryGenerationPrompt(input: StoryInput, profile: CharacterProfile) {
+export function buildStoryGenerationPrompt(
+  input: StoryInput,
+  profile: CharacterProfile | CharacterProfile[]
+) {
+  const characterNames = getCharacterNames(input);
+  const primaryCharacter = characterNames[0] ?? input.childName;
+  const characterList = formatCharacterNames(characterNames);
+  const profiles = normalizeProfiles(profile);
+  const characters = getCharacterInputs(input);
+  const primaryCharacterInput = characters[0];
+
   return `
 You are an expert children's story writer.
 
 Write a personalized 6-page storybook.
 
 Inputs:
-- Child name: ${input.childName}
-- Age band: ${input.ageBand}
+- Character names: ${characterList}
+- Primary illustrated character: ${primaryCharacter}
+- Primary character age: ${primaryCharacterInput?.age ?? "unknown"}
 - Theme: ${input.theme}
-- Traits: ${input.traits.join(", ") || "None"}
-- Character description: ${profile.characterDescription}
-- Style notes: ${profile.styleNotes}
+- Character details:
+${characters.map((character) => `  - ${character.name}: age ${character.age}; personality traits ${character.traits.join(", ") || "None"}`).join("\n")}
+- Character references:
+${profiles.map((characterProfile) => `  - ${characterProfile.characterName}: ${characterProfile.characterDescription}`).join("\n")}
 
 Requirements:
-- The child is the hero
+- ${characterNames.length > 1 ? `All of these characters are part of the main cast: ${characterList}` : `The child hero is ${primaryCharacter}`}
+- Every named character must appear in the story and be meaningfully included in the plot
+- Do not omit any named character from the 6-page story
 - Tone is warm, playful, magical, and safe
 - Structure: delightful beginning, small challenge, happy ending
 - Each page should have 2-4 short sentences
@@ -365,11 +453,15 @@ Return strict JSON:
 }
 
 export function buildStoryRefinementPrompt(storyJson: string, input: StoryInput) {
+  const characterNames = getCharacterNames(input);
+  const primaryCharacterInput = getCharacterInputs(input)[0];
+
   return `
 You are refining a children's storybook.
 
 Inputs:
-- Age band: ${input.ageBand}
+- Character names: ${formatCharacterNames(characterNames)}
+- Primary character age: ${primaryCharacterInput?.age ?? "unknown"}
 - Theme: ${input.theme}
 
 Improve this story for:
@@ -383,6 +475,7 @@ Keep:
 - same title
 - same 6-page structure
 - same general plot
+- every named character included in the story
 
 Return strict JSON in the same structure.
 

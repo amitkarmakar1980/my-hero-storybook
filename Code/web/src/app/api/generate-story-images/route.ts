@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { buildFinalImagePrompt, buildCoverImagePrompt, buildRetryImagePrompt } from "@/lib/prompts";
+import { buildFinalImagePrompt, buildRetryImagePrompt } from "@/lib/prompts";
 import type {
   CharacterProfile,
   GeneratedStory,
@@ -12,6 +12,7 @@ import type {
 // ── Request / response types ──────────────────────────────────────────────────
 
 interface GenerateStoryImagesRequest {
+  characterProfiles?: CharacterProfile[];
   characterProfile?: CharacterProfile;
   story?: GeneratedStory;
   imagePrompts?: PageImagePrompt[];
@@ -22,6 +23,23 @@ interface GenerateStoryImagesResponse {
   images: GeneratedStoryImage[];
 }
 
+interface GeminiCandidatePart {
+  text?: string;
+  thought?: boolean;
+  inlineData?: {
+    mimeType?: string;
+    data?: string;
+  };
+}
+
+interface GeminiImageResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: GeminiCandidatePart[];
+    };
+  }>;
+}
+
 // ── Placeholder ───────────────────────────────────────────────────────────────
 
 function generatePlaceholderImageUrl(pageNumber: number, seed: string): string {
@@ -30,9 +48,9 @@ function generatePlaceholderImageUrl(pageNumber: number, seed: string): string {
 }
 
 const GEMINI_IMAGE_MODEL =
-  process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.0-flash-preview-image-generation";
+  process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
 
-function extractGeneratedImagePart(response: any):
+function extractGeneratedImagePart(response: GeminiImageResponse):
   | { mimeType: string; data: string }
   | undefined {
   const parts = response?.candidates?.[0]?.content?.parts;
@@ -70,10 +88,10 @@ async function generateGeminiImage(prompt: string): Promise<{ mimeType: string; 
     config: {
       responseModalities: ["TEXT", "IMAGE"],
     },
-  });
+  }) as GeminiImageResponse;
 
-  console.log("[Gemini] Raw response candidates:", JSON.stringify(response?.candidates?.map((c: any) => ({
-    parts: c?.content?.parts?.map((p: any) => ({
+  console.log("[Gemini] Raw response candidates:", JSON.stringify(response?.candidates?.map((c) => ({
+    parts: c?.content?.parts?.map((p) => ({
       hasText: !!p?.text,
       hasInlineData: !!p?.inlineData,
       inlineDataMime: p?.inlineData?.mimeType,
@@ -90,69 +108,6 @@ async function generateGeminiImage(prompt: string): Promise<{ mimeType: string; 
   }
 
   return generatedImage;
-}
-
-
-// ── Baseline image generation — one attempt, no retry loops, no heuristics ───
-//
-// Only treats a page as failed when:
-//   1. The API returns a non-OK HTTP status
-//   2. The response contains no base64 image data
-//   3. A network/timeout error occurs
-//
-// No quality heuristics, no automatic retries, no rejection based on image size.
-
-async function generatePageImage(
-  pageNumber: number,
-  prompt: string
-): Promise<GeneratedStoryImage> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return {
-      pageNumber,
-      isPlaceholder: true,
-      error: "GEMINI_API_KEY not configured",
-      imageUrl: generatePlaceholderImageUrl(pageNumber, prompt),
-    };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120_000);
-
-  try {
-    const abortHandler = () => controller.abort();
-    controller.signal.addEventListener("abort", abortHandler, { once: true });
-    const generatedImagePromise = generateGeminiImage(prompt);
-    const generatedImage = await Promise.race([
-      generatedImagePromise,
-      new Promise<never>((_, reject) => {
-        controller.signal.addEventListener(
-          "abort",
-          () => reject(new Error("This operation was aborted")),
-          { once: true }
-        );
-      }),
-    ]);
-    clearTimeout(timeoutId);
-    controller.signal.removeEventListener("abort", abortHandler);
-    const imageUrl = `data:${generatedImage.mimeType};base64,${generatedImage.data}`;
-
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[Page ${pageNumber}] ✓ Generated`);
-    }
-
-    return { pageNumber, imageUrl };
-  } catch (err) {
-    clearTimeout(timeoutId);
-    const message = err instanceof Error ? err.message : "Generation failed";
-    console.error(`[Page ${pageNumber}] ✗ GEMINI ERROR:`, message, err);
-    return {
-      pageNumber,
-      isPlaceholder: true,
-      error: message,
-      imageUrl: generatePlaceholderImageUrl(pageNumber, prompt),
-    };
-  }
 }
 
 // ── Advanced generation (disabled by default) ─────────────────────────────────
@@ -229,7 +184,8 @@ async function _generateValidatedPageImage(
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateStoryImagesRequest;
-    const { characterProfile, story, imagePrompts, coverImagePrompt } = body;
+    const { story, imagePrompts, coverImagePrompt } = body;
+    const characterProfiles = body.characterProfiles ?? (body.characterProfile ? [body.characterProfile] : undefined);
 
     // Cover image request
     if (coverImagePrompt && !imagePrompts) {
@@ -239,7 +195,7 @@ export async function POST(request: NextRequest) {
 
     // Page images request
     if (
-      !characterProfile ||
+      !characterProfiles ||
       !story ||
       !Array.isArray(imagePrompts) ||
       imagePrompts.length === 0
@@ -247,7 +203,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Request must include either (characterProfile, story, imagePrompts) or (coverImagePrompt).",
+            "Request must include either (characterProfiles, story, imagePrompts) or (coverImagePrompt).",
         },
         { status: 400 }
       );
@@ -262,7 +218,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const prompt = buildFinalImagePrompt(characterProfile, storyPage, {
+      const prompt = buildFinalImagePrompt(characterProfiles, storyPage, {
         reinforceConsistency: ip.pageNumber > 1,
       });
 

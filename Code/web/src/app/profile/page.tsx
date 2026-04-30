@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { resolveStorageUrl } from "@/lib/supabase-server";
 import ProfileClient from "./ProfileClient";
+import type { StoredStoryData } from "@/types/storybook";
 
 async function getThumbnailUrl(story: {
   coverImageUrl: string | null;
@@ -57,13 +58,32 @@ export default async function ProfilePage() {
   );
 
   const fallbackStoryPhotos = stories
-    .filter((story) => story.childPhotoUrl)
-    .map((story) => ({
-      id: `story-${story.id}`,
-      url: story.childPhotoUrl as string,
-      filename: `${story.childName}-photo`,
-      createdAt: story.createdAt,
-    }));
+    .flatMap((story) => {
+      const storyJson = story.storyJson as StoredStoryData | null;
+      const persistedPhotos = storyJson?.characterPhotos ?? [];
+
+      if (persistedPhotos.length > 0) {
+        return persistedPhotos.map((photo, index) => ({
+          id: `story-${story.id}-${index}`,
+          url: photo.persistedPhotoUrl,
+          filename: photo.uploadedImageName ?? `${photo.characterName}-photo`,
+          createdAt: story.createdAt,
+          canDelete: false,
+        }));
+      }
+
+      if (!story.childPhotoUrl) {
+        return [];
+      }
+
+      return [{
+        id: `story-${story.id}`,
+        url: story.childPhotoUrl,
+        filename: `${story.childName}-photo`,
+        createdAt: story.createdAt,
+        canDelete: false,
+      }];
+    });
 
   const mergedPhotos = [...photos, ...fallbackStoryPhotos].filter(
     (photo, index, allPhotos) => allPhotos.findIndex((candidate) => candidate.url === photo.url) === index

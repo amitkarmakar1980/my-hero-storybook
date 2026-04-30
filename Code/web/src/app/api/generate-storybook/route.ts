@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import {
   buildCharacterProfilePrompt,
   buildStoryGenerationPrompt,
@@ -7,13 +8,25 @@ import {
 } from "@/lib/prompts";
 import type {
   StoryInput,
+  CharacterPhotoInput,
   CharacterProfile,
+  StoryCharacterInput,
   GeneratedStory,
   PageImagePrompt,
   CoverImagePrompt,
 } from "@/types/storybook";
 
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.5-flash";
+
+interface GeminiTextResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}
 
 function safeJsonParse<T>(text: string): T {
   // Gemini sometimes wraps responses in markdown code fences — strip them before parsing.
@@ -34,7 +47,7 @@ async function generateJson<T>(
     throw new Error("GEMINI_API_KEY environment variable is not set.");
   }
 
-  const content: any = {
+  const content: { parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> } = {
     parts: [
       {
         text: prompt,
@@ -82,7 +95,7 @@ async function generateJson<T>(
     throw new Error(`Gemini API error (${response.status}): ${errorText}`);
   }
 
-  const data = (await response.json()) as any;
+  const data = (await response.json()) as GeminiTextResponse;
   if (process.env.NODE_ENV === "development") {
     console.log("Gemini API response:", JSON.stringify(data, null, 2));
   }
@@ -104,27 +117,123 @@ async function generateJson<T>(
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
     const body = (await request.json()) as StoryInput;
+    const characterNamesFromCharacters = body.characters?.map((character) => character.name.trim()).filter(Boolean) ?? [];
+    const characterNames = characterNamesFromCharacters.length > 0
+      ? characterNamesFromCharacters
+      : body.characterNames?.map((name) => name.trim()).filter(Boolean) ?? [];
+    const normalizedCharacterNames = characterNames.length > 0
+      ? characterNames
+      : (body.childName?.trim() ? [body.childName.trim()] : []);
 
-    if (!body.childName || !body.ageBand || !body.theme) {
+    const normalizedCharacters: StoryCharacterInput[] = normalizedCharacterNames.map((characterName, index) => {
+      const character = body.characters?.[index];
+      return {
+        name: characterName,
+        age: typeof character?.age === "number" ? character.age : Number.NaN,
+        traits: character?.traits ?? body.traits ?? [],
+      } as StoryCharacterInput;
+    });
+
+    if (
+      normalizedCharacterNames.length === 0 ||
+      !body.theme ||
+      normalizedCharacters.some((character) => !Number.isFinite(character.age))
+    ) {
       return NextResponse.json(
         { error: "Missing required fields." },
         { status: 400 }
       );
     }
 
-    const characterProfile = await generateJson<CharacterProfile>(
-      buildCharacterProfilePrompt(body),
-      body.uploadedImageBase64,
-      body.uploadedImageMimeType
+    if (normalizedCharacterNames.length > 5) {
+      return NextResponse.json(
+        { error: "You can include up to 5 characters in one story." },
+        { status: 400 }
+      );
+    }
+
+    if (!session?.user?.id && normalizedCharacterNames.length > 1) {
+      return NextResponse.json(
+        { error: "Sign in to create a story with multiple characters." },
+        { status: 403 }
+      );
+    }
+
+    const normalizedCharacterPhotos: CharacterPhotoInput[] = normalizedCharacterNames.map((characterName, index) => {
+      const photo = body.characterPhotos?.[index];
+      if (photo) {
+        return {
+          ...photo,
+          characterName,
+        };
+      }
+
+      if (index === 0) {
+        return {
+          characterName,
+          uploadedImageBase64: body.uploadedImageBase64,
+          uploadedImageMimeType: body.uploadedImageMimeType,
+          uploadedImageName: body.uploadedImageName,
+        };
+      }
+
+      return { characterName };
+    });
+
+    const hasMissingPhoto = normalizedCharacterPhotos.some(
+      (photo) => !photo.uploadedImageBase64 && !photo.persistedPhotoUrl
+    );
+
+    if (hasMissingPhoto) {
+      return NextResponse.json(
+        { error: "Add a separate photo for each character." },
+        { status: 400 }
+      );
+    }
+
+    if (normalizedCharacters.some((character) => !Number.isInteger(character.age) || character.age < 1 || character.age > 100)) {
+      return NextResponse.json(
+        { error: "Enter a valid numeric age between 1 and 100 for each character." },
+        { status: 400 }
+      );
+    }
+
+    const normalizedInput: StoryInput = {
+      ...body,
+      childName: normalizedCharacterNames.join(", "),
+      characterNames: normalizedCharacterNames,
+      characters: normalizedCharacters,
+      characterPhotos: normalizedCharacterPhotos,
+      traits: normalizedCharacters[0]?.traits ?? [],
+    };
+
+    const characterProfiles = await Promise.all(
+      normalizedCharacterPhotos.map(async (characterPhoto) => {
+        const characterProfile = await generateJson<CharacterProfile>(
+          buildCharacterProfilePrompt(
+            normalizedInput,
+            characterPhoto.characterName,
+            normalizedCharacterNames
+          ),
+          characterPhoto.uploadedImageBase64,
+          characterPhoto.uploadedImageMimeType
+        );
+
+        return {
+          ...characterProfile,
+          characterName: characterPhoto.characterName,
+        };
+      })
     );
 
     const storyDraft = await generateJson<GeneratedStory>(
-      buildStoryGenerationPrompt(body, characterProfile)
+      buildStoryGenerationPrompt(normalizedInput, characterProfiles)
     );
 
     const refinedStory = await generateJson<GeneratedStory>(
-      buildStoryRefinementPrompt(JSON.stringify(storyDraft), body)
+      buildStoryRefinementPrompt(JSON.stringify(storyDraft), normalizedInput)
     );
 
     const imagePrompts: PageImagePrompt[] = refinedStory.pages.map((p) => ({
@@ -133,12 +242,16 @@ export async function POST(request: NextRequest) {
 
     // Build cover prompt directly — no Claude round-trip needed
     const coverImagePrompt: CoverImagePrompt = {
-      prompt: buildCoverImagePrompt(characterProfile, refinedStory.title),
+      prompt: buildCoverImagePrompt(characterProfiles, refinedStory.title),
     };
 
     return NextResponse.json({
-      childName: body.childName,
-      characterProfile,
+      childName: normalizedInput.childName,
+      characterNames: normalizedInput.characterNames,
+      characters: normalizedInput.characters,
+      characterPhotos: normalizedInput.characterPhotos,
+      characterProfiles,
+      characterProfile: characterProfiles[0],
       story: refinedStory,
       coverImagePrompt,
       imagePrompts,

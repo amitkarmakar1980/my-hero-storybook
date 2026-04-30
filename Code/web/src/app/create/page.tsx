@@ -1,11 +1,8 @@
-import Header from "@/components/Header";
 import CreateStoryForm from "./CreateStoryForm";
 
 export default function CreateStoryPage() {
   return (
-    <>
-      <Header />
-      <main className="min-h-screen bg-[#FCF7EE]">
+    <main className="min-h-screen bg-[#FCF7EE]">
 
         {/* Slim progress bar */}
         <div className="bg-[#FCF7EE] border-b border-[#FFD5C0]/50">
@@ -51,7 +48,6 @@ export default function CreateStoryPage() {
           </div>
         </div>
 
-      </main>
-    </>
+    </main>
   );
 }

@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import StorySavedClient from "./StorySavedClient";
-import type { GeneratedStory } from "@/types/storybook";
+import type { StoredStoryData } from "@/types/storybook";
 
 export default async function SavedStoryPage({
   params,
@@ -27,7 +27,7 @@ export default async function SavedStoryPage({
         theme: story.theme,
         childName: story.childName,
         coverImageUrl: story.coverImageUrl ?? undefined,
-        storyJson: story.storyJson as unknown as GeneratedStory,
+        storyJson: story.storyJson as unknown as StoredStoryData,
         pageImagesJson: story.pageImagesJson as unknown as Record<number, { imageUrl: string }>,
         createdAt: story.createdAt.toISOString(),
       }}

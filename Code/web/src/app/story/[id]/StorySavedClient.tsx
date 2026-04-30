@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { GeneratedStory } from "@/types/storybook";
+import type { StoredStoryData } from "@/types/storybook";
 
 interface SavedStory {
   id: string;
@@ -11,7 +11,7 @@ interface SavedStory {
   theme: string;
   childName: string;
   coverImageUrl?: string;
-  storyJson: GeneratedStory;
+  storyJson: StoredStoryData;
   pageImagesJson: Record<number, { imageUrl: string }>;
   createdAt: string;
 }
@@ -29,7 +29,8 @@ function Spinner({ className }: { className?: string }) {
 export default function StorySavedClient({ story }: { story: SavedStory }) {
   const router = useRouter();
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
-  const heroName = story.childName.split(" ")[0];
+  const heroName = story.childName;
+  const castCount = story.childName.split(",").map((name) => name.trim()).filter(Boolean).length;
 
   const handleDownloadPdf = async () => {
     if (isPdfGenerating) return;
@@ -54,7 +55,7 @@ export default function StorySavedClient({ story }: { story: SavedStory }) {
       <div className="bg-gradient-to-b from-[#FBF1E3] to-[#f8f3ea]">
         <div className="mx-auto max-w-2xl px-5 py-16 md:py-20 text-center">
           <p className="text-xs font-semibold text-[#FC800A] tracking-widest uppercase mb-4">
-            ✨ A story starring your little hero ✨
+            {castCount > 1 ? "✨ A story starring your little heroes ✨" : "✨ A story starring your little hero ✨"}
           </p>
           <h1
             className="text-5xl md:text-6xl lg:text-7xl text-[#171E45] leading-tight tracking-[-0.03em] mb-6"

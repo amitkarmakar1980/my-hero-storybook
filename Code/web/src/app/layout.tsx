@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins, Rowdies } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
+import Header from "@/components/Header";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -36,7 +37,10 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com" />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <Providers>{children}</Providers>
+        <Providers>
+          <Header />
+          {children}
+        </Providers>
       </body>
     </html>
   );

@@ -9,7 +9,9 @@ import type {
   PageImagePrompt,
   CoverImagePrompt,
   CharacterProfile,
+  CharacterPhotoInput,
   GeneratedStory,
+  StoryCharacterInput,
 } from "@/types/storybook";
 
 // ── Session storage helpers ───────────────────────────────────────────────────
@@ -18,6 +20,9 @@ const SESSION_KEY = "heroStorybookDraft";
 
 interface DraftExtras {
   theme?: string;
+  characterNames?: string[];
+  characters?: StoryCharacterInput[];
+  characterPhotos?: CharacterPhotoInput[];
   childPhotoUrl?: string;
   childPhotoBase64?: string;
   childPhotoMimeType?: string;
@@ -26,7 +31,7 @@ interface DraftExtras {
 function isGeneratedStorybook(value: unknown): value is GeneratedStorybook {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (!("childName" in v) || !("characterProfile" in v) || !("story" in v) || !("coverImagePrompt" in v) || !("imagePrompts" in v)) return false;
+  if (!("childName" in v) || !(("characterProfile" in v) || ("characterProfiles" in v)) || !("story" in v) || !("coverImagePrompt" in v) || !("imagePrompts" in v)) return false;
   const story = v.story as Record<string, unknown> | null;
   return (
     typeof story === "object" &&
@@ -48,6 +53,14 @@ function readStorybookDraft(): (GeneratedStorybook & DraftExtras) | null {
   }
 }
 
+function getDraftCharacterProfiles(draft: GeneratedStorybook & DraftExtras): CharacterProfile[] {
+  if (Array.isArray(draft.characterProfiles) && draft.characterProfiles.length > 0) {
+    return draft.characterProfiles;
+  }
+
+  return draft.characterProfile ? [draft.characterProfile] : [];
+}
+
 // ── Page image state ──────────────────────────────────────────────────────────
 
 // ── Page image state ──────────────────────────────────────────────────────
@@ -66,7 +79,7 @@ type PageImageRecord = {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function fetchPageImages(
-  characterProfile: CharacterProfile,
+  characterProfiles: CharacterProfile[],
   story: GeneratedStory,
   imagePrompts: PageImagePrompt[],
   signal?: AbortSignal
@@ -74,7 +87,7 @@ async function fetchPageImages(
   const res = await fetch("/api/generate-story-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ characterProfile, story, imagePrompts }),
+    body: JSON.stringify({ characterProfiles, story, imagePrompts }),
     signal,
   });
   if (!res.ok) throw new Error(`Image generation failed (${res.status})`);
@@ -333,8 +346,6 @@ export default function StoryPreviewClient() {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
     let isMounted = true;
 
     const loadData = async () => {
@@ -354,12 +365,11 @@ export default function StoryPreviewClient() {
         setPageImages(initial);
 
         try {
-          const results = await fetchPageImages(data.characterProfile, data.story, data.imagePrompts, signal);
-          if (!isMounted || signal.aborted) return;
+          const results = await fetchPageImages(getDraftCharacterProfiles(data), data.story, data.imagePrompts);
+          if (!isMounted) return;
           applyImageResults(results);
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") return;
-          if (!isMounted || signal.aborted) return;
+        } catch {
+          if (!isMounted) return;
           setPageImages((prev) => {
             const next = { ...prev };
             for (const key of Object.keys(next)) {
@@ -373,16 +383,15 @@ export default function StoryPreviewClient() {
         }
 
         try {
-          const coverResult = await fetchCoverImage(data.coverImagePrompt, signal);
-          if (!isMounted || signal.aborted) return;
+          const coverResult = await fetchCoverImage(data.coverImagePrompt);
+          if (!isMounted) return;
           if (coverResult.imageUrl) {
             setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
           } else {
             setCoverImageState({ status: "error", error: coverResult.error ?? "Unknown error" });
           }
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") return;
-          if (!isMounted || signal.aborted) return;
+        } catch {
+          if (!isMounted) return;
           setCoverImageState({ status: "error", error: "Cover generation failed" });
         }
       } catch (err) {
@@ -393,7 +402,6 @@ export default function StoryPreviewClient() {
     loadData();
     return () => {
       isMounted = false;
-      controller.abort();
     };
   }, [router, applyImageResults]);
 
@@ -404,7 +412,7 @@ export default function StoryPreviewClient() {
       if (!prompt) return;
       setPageImages((prev) => ({ ...prev, [pageNumber]: { state: { status: "loading" } } }));
       try {
-        const results = await fetchPageImages(draft.characterProfile, draft.story, [prompt]);
+        const results = await fetchPageImages(getDraftCharacterProfiles(draft), draft.story, [prompt]);
         applyImageResults(results);
       } catch {
         setPageImages((prev) => ({
@@ -452,6 +460,9 @@ export default function StoryPreviewClient() {
         coverText: draft.story.coverText,
         theme: draft.theme ?? "",
         childName: draft.childName,
+        characterNames: draft.characterNames,
+        characters: draft.characters,
+        characterPhotos: draft.characterPhotos,
         childPhotoUrl: draft.childPhotoUrl,
         childPhotoBase64: draft.childPhotoBase64,
         childPhotoMimeType: draft.childPhotoMimeType,

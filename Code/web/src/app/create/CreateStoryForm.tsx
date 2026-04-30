@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 import { STORY_THEMES } from "@/lib/storyThemes";
-import type { AgeBand, StoryTheme, StoryTrait } from "@/types/storybook";
+import type { StoryTheme, StoryTrait } from "@/types/storybook";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,13 +16,8 @@ const TRAIT_ICONS: Record<StoryTrait, string> = {
   Kind: "💛",
 };
 
-const AGE_BANDS = [
-  { value: "3-4" as AgeBand, label: "3–4 years", emoji: "🌱" },
-  { value: "5-6" as AgeBand, label: "5–6 years", emoji: "⭐" },
-  { value: "7-8" as AgeBand, label: "7–8 years", emoji: "🚀" },
-];
-
 const MAX_PHOTO_SIZE_BYTES = 4 * 1024 * 1024;
+const MAX_LOGGED_IN_CHARACTERS = 5;
 
 const LOADING_STAGES = [
   { emoji: "📸", text: "Reading your child's details…" },
@@ -44,25 +39,64 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface StoryCreationData {
-  childName: string;
-  ageBand: AgeBand | "";
+  characters: Array<{
+    name: string;
+    age: string;
+    traits: StoryTrait[];
+  }>;
   selectedTheme: StoryTheme | "";
-  selectedTraits: StoryTrait[];
 }
 
 interface RequiredFieldErrors {
-  childName: string;
-  ageBand: string;
+  characters: string;
   selectedTheme: string;
 }
 
 interface FieldTouchedState {
-  childName: boolean;
-  ageBand: boolean;
+  characters: boolean;
   selectedTheme: boolean;
+}
+
+interface SavedPhoto {
+  id: string;
+  url: string;
+  storageUrl: string;
+  filename: string;
+  createdAt: string;
+}
+
+type CharacterPhotoSelection = {
+  file: File | null;
+  previewUrl: string | null;
+  previewSource: "upload" | "saved" | null;
+  selectedSavedPhoto: SavedPhoto | null;
+};
+
+function createEmptyCharacterPhotoSelection(): CharacterPhotoSelection {
+  return {
+    file: null,
+    previewUrl: null,
+    previewSource: null,
+    selectedSavedPhoto: null,
+  };
+}
+
+function revokeCharacterPhotoPreview(selection: CharacterPhotoSelection | undefined) {
+  if (selection?.previewSource === "upload" && selection.previewUrl) {
+    URL.revokeObjectURL(selection.previewUrl);
+  }
 }
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
@@ -107,6 +141,25 @@ function ValidationError({ id, message }: { id?: string; message: string }) {
   );
 }
 
+function normalizeCharacterNames(names: string[]): string[] {
+  return names.map((name) => name.trim()).filter(Boolean);
+}
+
+function formatCharacterNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+function createEmptyCharacterDraft() {
+  return {
+    name: "",
+    age: "",
+    traits: [] as StoryTrait[],
+  };
+}
+
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export default function CreateStoryForm() {
@@ -114,18 +167,19 @@ export default function CreateStoryForm() {
   const isSignedIn = !!session?.user?.id;
 
   const [storyData, setStoryData] = useState<StoryCreationData>({
-    childName: "",
-    ageBand: "",
+    characters: [createEmptyCharacterDraft()],
     selectedTheme: "",
-    selectedTraits: [],
   });
   const [touched, setTouched] = useState<FieldTouchedState>({
-    childName: false,
-    ageBand: false,
+    characters: false,
     selectedTheme: false,
   });
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [characterPhotos, setCharacterPhotos] = useState<CharacterPhotoSelection[]>([
+    createEmptyCharacterPhotoSelection(),
+  ]);
+  const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>([]);
+  const [isLoadingSavedPhotos, setIsLoadingSavedPhotos] = useState(false);
+  const [activeSavedPhotoPickerIndex, setActiveSavedPhotoPickerIndex] = useState<number | null>(null);
   const [photoError, setPhotoError] = useState<string>("");
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -134,14 +188,57 @@ export default function CreateStoryForm() {
   const [loadingProgress, setLoadingProgress] = useState(0);
 
   const router = useRouter();
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const activePhotoUrlRef = useRef<string | null>(null);
+  const photoInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const characterPhotosRef = useRef<CharacterPhotoSelection[]>([createEmptyCharacterPhotoSelection()]);
+
+  useEffect(() => {
+    characterPhotosRef.current = characterPhotos;
+  }, [characterPhotos]);
 
   useEffect(() => {
     return () => {
-      if (activePhotoUrlRef.current) URL.revokeObjectURL(activePhotoUrlRef.current);
+      characterPhotosRef.current.forEach((selection) => revokeCharacterPhotoPreview(selection));
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setSavedPhotos([]);
+      setActiveSavedPhotoPickerIndex(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadSavedPhotos = async () => {
+      setIsLoadingSavedPhotos(true);
+      try {
+        const response = await fetch("/api/profile/photos");
+        if (!response.ok) {
+          throw new Error("Failed to load saved photos");
+        }
+
+        const data = (await response.json()) as { photos?: SavedPhoto[] };
+        if (isMounted) {
+          setSavedPhotos(data.photos ?? []);
+        }
+      } catch {
+        if (isMounted) {
+          setSavedPhotos([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingSavedPhotos(false);
+        }
+      }
+    };
+
+    void loadSavedPhotos();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -166,60 +263,189 @@ export default function CreateStoryForm() {
 
   // ── Derived state ──
 
+  const normalizedCharacters = storyData.characters
+    .map((character) => ({
+      ...character,
+      name: character.name.trim(),
+    }))
+    .filter((character) => character.name);
+  const normalizedCharacterNames = normalizeCharacterNames(
+    normalizedCharacters.map((character) => character.name)
+  );
+  const hasBlankCharacterField = storyData.characters.some((character) => !character.name.trim());
+  const hasMissingCharacterPhoto = storyData.characters.some((character, index) => {
+    if (!character.name.trim()) return false;
+    const selection = characterPhotos[index];
+    return !selection?.file && !selection?.selectedSavedPhoto;
+  });
+  const hasMissingCharacterAge = storyData.characters.some(
+    (character) => !!character.name.trim() && !character.age.trim()
+  );
+  const hasInvalidCharacterAge = storyData.characters.some(
+    (character) =>
+      !!character.name.trim() &&
+      (!Number.isInteger(Number(character.age)) || Number(character.age) < 1 || Number(character.age) > 100)
+  );
+  const characterSummary = formatCharacterNames(normalizedCharacterNames);
+
   const errors: RequiredFieldErrors = {
-    childName: !storyData.childName.trim() ? "Please enter your child's name." : "",
-    ageBand: !storyData.ageBand ? "Please select an age group." : "",
+    characters:
+      normalizedCharacterNames.length === 0
+        ? "Please enter at least one character name."
+        : hasBlankCharacterField
+        ? "Fill in each character name or remove the empty fields."
+        : !isSignedIn && normalizedCharacterNames.length > 1
+        ? "Sign in to include more than one character."
+        : normalizedCharacterNames.length > MAX_LOGGED_IN_CHARACTERS
+        ? "You can include up to 5 characters in one story."
+        : hasMissingCharacterAge
+        ? "Choose an age for each character."
+        : hasInvalidCharacterAge
+        ? "Enter a valid numeric age between 1 and 100 for each character."
+        : hasMissingCharacterPhoto
+        ? "Add a separate photo for each character."
+        : "",
     selectedTheme: !storyData.selectedTheme ? "Please choose a story theme." : "",
   };
-  const isFormValid = !errors.childName && !errors.ageBand && !errors.selectedTheme;
+  const isFormValid = !errors.characters && !errors.selectedTheme;
   const shouldShowError = (field: keyof FieldTouchedState) =>
     (touched[field] || submitAttempted) && !!errors[field];
 
   // ── Handlers ──
 
-  const handleChildNameChange = (value: string) =>
-    setStoryData((prev) => ({ ...prev, childName: value }));
-  const handleChildNameBlur = () =>
-    setTouched((prev) => ({ ...prev, childName: true }));
-  const handleAgeBandSelect = (band: AgeBand) => {
-    setStoryData((prev) => ({ ...prev, ageBand: band }));
-    setTouched((prev) => ({ ...prev, ageBand: true }));
+  const handleCharacterNameChange = (index: number, value: string) => {
+    setStoryData((prev) => ({
+      ...prev,
+      characters: prev.characters.map((character, currentIndex) =>
+        currentIndex === index ? { ...character, name: value } : character
+      ),
+    }));
+  };
+  const handleCharacterNamesBlur = () =>
+    setTouched((prev) => ({ ...prev, characters: true }));
+  const handleAddCharacter = () => {
+    if (!isSignedIn || storyData.characters.length >= MAX_LOGGED_IN_CHARACTERS) {
+      return;
+    }
+
+    setStoryData((prev) => ({
+      ...prev,
+      characters: [...prev.characters, createEmptyCharacterDraft()],
+    }));
+    setCharacterPhotos((prev) => [...prev, createEmptyCharacterPhotoSelection()]);
+    setTouched((prev) => ({ ...prev, characters: true }));
+  };
+  const handleRemoveCharacter = (index: number) => {
+    setStoryData((prev) => {
+      const nextCharacters = prev.characters.filter((_, currentIndex) => currentIndex !== index);
+      return {
+        ...prev,
+        characters: nextCharacters.length > 0 ? nextCharacters : [createEmptyCharacterDraft()],
+      };
+    });
+    setCharacterPhotos((prev) => {
+      const removedSelection = prev[index];
+      revokeCharacterPhotoPreview(removedSelection);
+      const nextSelections = prev.filter((_, currentIndex) => currentIndex !== index);
+      return nextSelections.length > 0 ? nextSelections : [createEmptyCharacterPhotoSelection()];
+    });
+    setActiveSavedPhotoPickerIndex((prev) => {
+      if (prev === null) return null;
+      if (prev === index) return null;
+      return prev > index ? prev - 1 : prev;
+    });
+    setTouched((prev) => ({ ...prev, characters: true }));
+  };
+  const handleCharacterAgeChange = (index: number, value: string) => {
+    const normalizedValue = value.replace(/[^0-9]/g, "").slice(0, 3);
+    setStoryData((prev) => ({
+      ...prev,
+      characters: prev.characters.map((character, currentIndex) =>
+        currentIndex === index ? { ...character, age: normalizedValue } : character
+      ),
+    }));
+    setTouched((prev) => ({ ...prev, characters: true }));
   };
   const handleThemeSelect = (theme: StoryTheme) => {
     setStoryData((prev) => ({ ...prev, selectedTheme: theme }));
     setTouched((prev) => ({ ...prev, selectedTheme: true }));
   };
-  const handleTraitToggle = (trait: StoryTrait) =>
+  const handleTraitToggle = (index: number, trait: StoryTrait) =>
     setStoryData((prev) => ({
       ...prev,
-      selectedTraits: prev.selectedTraits.includes(trait)
-        ? prev.selectedTraits.filter((t) => t !== trait)
-        : [...prev.selectedTraits, trait],
+      characters: prev.characters.map((character, currentIndex) => {
+        if (currentIndex !== index) {
+          return character;
+        }
+
+        return {
+          ...character,
+          traits: character.traits.includes(trait)
+            ? character.traits.filter((currentTrait) => currentTrait !== trait)
+            : [...character.traits, trait],
+        };
+      }),
     }));
 
-  const handlePhotoFileSelected = (file: File) => {
+  const handlePhotoFileSelected = (index: number, file: File) => {
     setPhotoError("");
     if (file.size > MAX_PHOTO_SIZE_BYTES) {
       setPhotoError("Photo must be under 4 MB. Please choose a smaller image.");
       return;
     }
-    if (activePhotoUrlRef.current) URL.revokeObjectURL(activePhotoUrlRef.current);
     const newUrl = URL.createObjectURL(file);
-    activePhotoUrlRef.current = newUrl;
-    setPhotoFile(file);
-    setPhotoPreviewUrl(newUrl);
+    setCharacterPhotos((prev) => {
+      const next = [...prev];
+      const current = next[index] ?? createEmptyCharacterPhotoSelection();
+      revokeCharacterPhotoPreview(current);
+      next[index] = {
+        file,
+        previewUrl: newUrl,
+        previewSource: "upload",
+        selectedSavedPhoto: null,
+      };
+      return next;
+    });
+    setActiveSavedPhotoPickerIndex(null);
   };
-  const handlePhotoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoInputChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handlePhotoFileSelected(file);
+    if (file) handlePhotoFileSelected(index, file);
   };
-  const handlePhotoRemove = () => {
-    if (activePhotoUrlRef.current) URL.revokeObjectURL(activePhotoUrlRef.current);
-    activePhotoUrlRef.current = null;
-    setPhotoFile(null);
-    setPhotoPreviewUrl(null);
+  const handlePhotoRemove = (index: number) => {
+    setCharacterPhotos((prev) => {
+      const next = [...prev];
+      revokeCharacterPhotoPreview(next[index]);
+      next[index] = createEmptyCharacterPhotoSelection();
+      return next;
+    });
     setPhotoError("");
-    if (photoInputRef.current) photoInputRef.current.value = "";
+    setActiveSavedPhotoPickerIndex((prev) => (prev === index ? null : prev));
+    if (photoInputRefs.current[index]) {
+      photoInputRefs.current[index]!.value = "";
+    }
+  };
+
+  const handleSavedPhotoSelect = (index: number, photo: SavedPhoto) => {
+    setCharacterPhotos((prev) => {
+      const next = [...prev];
+      const current = next[index] ?? createEmptyCharacterPhotoSelection();
+      revokeCharacterPhotoPreview(current);
+      next[index] = {
+        file: null,
+        previewUrl: photo.url,
+        previewSource: "saved",
+        selectedSavedPhoto: photo,
+      };
+      return next;
+    });
+
+    if (photoInputRefs.current[index]) {
+      photoInputRefs.current[index]!.value = "";
+    }
+
+    setPhotoError("");
+    setActiveSavedPhotoPickerIndex(null);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -237,58 +463,113 @@ export default function CreateStoryForm() {
     setIsLoading(true);
     setApiError("");
     try {
-      let uploadedImageBase64: string | undefined;
-      let uploadedImageMimeType: string | undefined;
-      let uploadedImageName: string | undefined;
-      if (photoFile) {
-        uploadedImageBase64 = await fileToBase64(photoFile);
-        uploadedImageMimeType = photoFile.type;
-        uploadedImageName = photoFile.name;
-      }
+      const characters = normalizedCharacters.map((character) => ({
+        name: character.name,
+        age: Number(character.age),
+        traits: character.traits,
+      }));
+      const characterNames = characters.map((character) => character.name);
+      const childName = formatCharacterNames(characterNames);
+      const characterPhotoPayloads = await Promise.all(
+        characterNames.map(async (characterName, index) => {
+          const selection = characterPhotos[index] ?? createEmptyCharacterPhotoSelection();
+          let uploadedImageBase64: string | undefined;
+          let uploadedImageMimeType: string | undefined;
+          let uploadedImageName: string | undefined;
+          const persistedPhotoUrl = selection.selectedSavedPhoto?.storageUrl;
 
-      // Upload photo to profile (if signed in) in parallel with story generation
-      const photoUploadPromise = (async () => {
-        if (!uploadedImageBase64 || !isSignedIn) return undefined;
-        try {
-          const res = await fetch("/api/profile/photos", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              photoBase64: uploadedImageBase64,
-              filename: uploadedImageName ?? photoFile?.name ?? "child-photo.jpg",
-              mimeType: uploadedImageMimeType ?? photoFile?.type ?? "image/jpeg",
-            }),
-          });
-          if (!res.ok) return undefined;
-          const { photo } = await res.json() as { photo: { url: string } };
-          return photo.url as string;
-        } catch {
-          return undefined;
-        }
-      })();
+          if (selection.file) {
+            uploadedImageBase64 = await fileToBase64(selection.file);
+            uploadedImageMimeType = selection.file.type;
+            uploadedImageName = selection.file.name;
+          } else if (selection.selectedSavedPhoto) {
+            const photoResponse = await fetch(selection.selectedSavedPhoto.url);
+            if (!photoResponse.ok) {
+              throw new Error("Could not load one of the selected saved photos. Please try again.");
+            }
+
+            const photoBlob = await photoResponse.blob();
+            uploadedImageBase64 = await blobToBase64(photoBlob);
+            uploadedImageMimeType = photoBlob.type || "image/jpeg";
+            uploadedImageName = selection.selectedSavedPhoto.filename;
+          }
+
+          return {
+            characterName,
+            uploadedImageBase64,
+            uploadedImageMimeType,
+            uploadedImageName,
+            persistedPhotoUrl,
+          };
+        })
+      );
+
+      const photoUploadPromise = Promise.all(
+        characterPhotoPayloads.map(async (characterPhoto) => {
+          if (!characterPhoto.uploadedImageBase64 || !isSignedIn || characterPhoto.persistedPhotoUrl) {
+            return characterPhoto.persistedPhotoUrl;
+          }
+
+          try {
+            const res = await fetch("/api/profile/photos", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                photoBase64: characterPhoto.uploadedImageBase64,
+                filename: characterPhoto.uploadedImageName ?? `${characterPhoto.characterName}-photo.jpg`,
+                mimeType: characterPhoto.uploadedImageMimeType ?? "image/jpeg",
+              }),
+            });
+
+            if (!res.ok) return undefined;
+            const { photo } = await res.json() as { photo: { url: string } };
+            return photo.url as string;
+          } catch {
+            return undefined;
+          }
+        })
+      );
 
       const storyPromise = fetch("/api/generate-storybook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          childName: storyData.childName,
-          ageBand: storyData.ageBand as AgeBand,
+          childName,
+          characterNames,
           theme: storyData.selectedTheme as StoryTheme,
-          traits: storyData.selectedTraits,
-          ...(uploadedImageBase64 ? { uploadedImageBase64, uploadedImageMimeType, uploadedImageName } : {}),
+          characters,
+          traits: characters[0]?.traits,
+          characterPhotos: characterPhotoPayloads,
+          ...(characterPhotoPayloads[0]?.uploadedImageBase64
+            ? {
+                uploadedImageBase64: characterPhotoPayloads[0].uploadedImageBase64,
+                uploadedImageMimeType: characterPhotoPayloads[0].uploadedImageMimeType,
+                uploadedImageName: characterPhotoPayloads[0].uploadedImageName,
+              }
+            : {}),
         }),
       });
 
-      const [res, childPhotoUrl] = await Promise.all([storyPromise, photoUploadPromise]);
+      const [res, uploadedPhotoUrls] = await Promise.all([storyPromise, photoUploadPromise]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Story generation failed. Please try again.");
+
+      const persistedCharacterPhotos = characterPhotoPayloads.map((characterPhoto, index) => ({
+        ...characterPhoto,
+        persistedPhotoUrl: uploadedPhotoUrls[index] ?? characterPhoto.persistedPhotoUrl,
+      }));
+      const mainCharacterPhoto = persistedCharacterPhotos[0];
 
       sessionStorage.setItem("heroStorybookDraft", JSON.stringify({
         ...data,
         theme: storyData.selectedTheme,
-        childPhotoUrl: childPhotoUrl ?? undefined,
-        childPhotoBase64: uploadedImageBase64 ?? undefined,
-        childPhotoMimeType: uploadedImageMimeType ?? undefined,
+        childName,
+        characterNames,
+        characters,
+        characterPhotos: persistedCharacterPhotos,
+        childPhotoUrl: mainCharacterPhoto?.persistedPhotoUrl ?? undefined,
+        childPhotoBase64: mainCharacterPhoto?.uploadedImageBase64 ?? undefined,
+        childPhotoMimeType: mainCharacterPhoto?.uploadedImageMimeType ?? undefined,
       }));
       router.push("/story-preview");
     } catch (err) {
@@ -301,7 +582,7 @@ export default function CreateStoryForm() {
   // ── Render ──
 
   if (isLoading) {
-    const heroName = storyData.childName.trim().split(" ")[0] || "your child";
+    const heroName = characterSummary || "your child";
     const stage = LOADING_STAGES[stageIndex];
     return (
       <div className="flex flex-col items-center text-center gap-9 py-14 px-4 min-h-[420px] justify-center">
@@ -359,69 +640,317 @@ export default function CreateStoryForm() {
     );
   }
 
+  const renderCharacterPhotoSelector = (index: number) => {
+    const selection = characterPhotos[index] ?? createEmptyCharacterPhotoSelection();
+    const isSavedPickerOpen = activeSavedPhotoPickerIndex === index;
+    const hasPhoto = !!selection.previewUrl;
+
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl border border-[#FFD5C0] bg-[#FFF9F2] p-4">
+        <div>
+          <p className="text-sm font-semibold text-[#171E45]">
+            {index === 0 ? "Main character photo" : `Photo for character ${index + 1}`}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-[#020202]/45">
+            {index === 0
+              ? "This photo defines the main hero's look across the book."
+              : "Use a different photo so this character stays visually distinct in the illustrations."}
+          </p>
+        </div>
+
+        {hasPhoto ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-[#FFD5C0] bg-[#FCF7EE] p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selection.previewUrl ?? undefined}
+              alt={selection.selectedSavedPhoto?.filename ?? `Character ${index + 1} photo preview`}
+              className="h-14 w-14 rounded-xl object-cover border border-[#FFD5C0]"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-[#171E45]">
+                {selection.selectedSavedPhoto?.filename ?? selection.file?.name ?? `Character ${index + 1} photo`}
+              </p>
+              <p className="text-[11px] text-[#020202]/35">
+                {selection.selectedSavedPhoto
+                  ? "Using a saved photo from your profile"
+                  : `${((selection.file?.size ?? 0) / 1024).toFixed(0)} KB`}
+              </p>
+            </div>
+            <span className="text-lg text-[#FC800A]" aria-hidden="true">✓</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => photoInputRefs.current[index]?.click()}
+            suppressHydrationWarning
+            className="rounded-2xl border-2 border-dashed border-[#FFD5C0] bg-[#FCF7EE] px-4 py-5 text-left
+                       hover:border-[#FC800A]/40 hover:bg-[#FBF1E3]
+                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+          >
+            <span className="block text-sm font-semibold text-[#171E45]">Upload a photo</span>
+            <span className="mt-1 block text-xs leading-relaxed text-[#020202]/45">
+              JPG, PNG, or WebP up to 4 MB
+            </span>
+          </button>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => photoInputRefs.current[index]?.click()}
+            suppressHydrationWarning
+            className="rounded-full bg-[#FBF1E3] px-3 py-2 text-xs font-semibold text-[#FC800A]
+                       hover:bg-[#FFE8D0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+          >
+            {hasPhoto ? "Upload different photo" : "Upload photo"}
+          </button>
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={() => setActiveSavedPhotoPickerIndex((prev) => (prev === index ? null : index))}
+              className="rounded-full border border-[#FFD5C0] bg-white px-3 py-2 text-xs font-semibold text-[#171E45]
+                         hover:border-[#FC800A]/40 hover:text-[#FC800A]
+                         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+            >
+              {isSavedPickerOpen ? "Hide saved photos" : "Use saved photo"}
+            </button>
+          )}
+          {hasPhoto && (
+            <button
+              type="button"
+              onClick={() => handlePhotoRemove(index)}
+              className="rounded-full border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-500
+                         hover:border-red-300 hover:text-red-600
+                         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+
+        <input
+          ref={(element) => {
+            photoInputRefs.current[index] = element;
+          }}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => handlePhotoInputChange(index, e)}
+          suppressHydrationWarning
+          className="sr-only"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+
+        {isSignedIn && isSavedPickerOpen && (
+          <div className="rounded-2xl border border-[#FFD5C0] bg-white/80 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#171E45]">Choose from saved photos</p>
+                <p className="text-xs text-[#020202]/45">Pick one from your profile library</p>
+              </div>
+              {isLoadingSavedPhotos && <span className="text-xs text-[#020202]/35">Loading…</span>}
+            </div>
+
+            {savedPhotos.length === 0 ? (
+              <p className="text-xs text-[#020202]/40">No saved photos yet. Upload one once and it will appear here next time.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {savedPhotos.map((photo) => {
+                  const isSelected = selection.selectedSavedPhoto?.id === photo.id;
+                  return (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => handleSavedPhotoSelect(index, photo)}
+                      className={`relative aspect-square overflow-hidden rounded-2xl border-2 transition-all duration-200
+                                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                                  ${isSelected
+                                    ? "border-[#FC800A] shadow-[0_8px_24px_rgba(252,128,10,0.28)] scale-[1.02]"
+                                    : "border-[#FFD5C0] hover:border-[#FC800A]/40 hover:-translate-y-0.5"
+                                  }`}
+                      aria-pressed={isSelected}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={photo.filename}
+                        className="h-full w-full object-cover"
+                      />
+                      <span className="absolute inset-x-0 bottom-0 truncate bg-[#171E45]/65 px-2 py-1 text-[10px] font-semibold text-white">
+                        {photo.filename}
+                      </span>
+                      {isSelected && (
+                        <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#FC800A] text-xs font-bold text-white shadow-md">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-10" suppressHydrationWarning>
 
-      {/* ① Child's name */}
-      <StoryFormSection number={1} title="What's your child's name?">
-        <label htmlFor="childName-input" className="sr-only">Child's name</label>
-        <input
-          id="childName-input"
-          type="text"
-          value={storyData.childName}
-          onChange={(e) => handleChildNameChange(e.target.value)}
-          onBlur={handleChildNameBlur}
-          suppressHydrationWarning
-          placeholder="e.g. Emma"
-          maxLength={40}
-          autoComplete="off"
-          aria-invalid={shouldShowError("childName")}
-          aria-describedby={shouldShowError("childName") ? "childName-error" : undefined}
-          className={`w-full rounded-2xl px-5 py-3.5 bg-[#FCF7EE] border-2 text-[#020202]
-                      text-base placeholder:text-[#020202]/30 focus:outline-none focus:ring-2
-                      transition-all duration-200
-                      ${shouldShowError("childName")
-                        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                        : "border-[#FFD5C0] focus:border-[#FC800A] focus:ring-[#FC800A]/15"
-                      }`}
-        />
-        {shouldShowError("childName") && (
-          <ValidationError id="childName-error" message={errors.childName} />
-        )}
-      </StoryFormSection>
+      {/* ① Character blocks */}
+      <StoryFormSection
+        number={1}
+        title={isSignedIn ? "Who should appear in the story?" : "What&apos;s your child&apos;s name?"}
+        hint={isSignedIn ? "Each character block includes name, photo, exact age, and personality traits. The first character is the main character." : undefined}
+      >
+        <div className="flex flex-col gap-4">
+            {storyData.characters.map((character, index) => (
+              <div key={index} className="rounded-[1.75rem] border border-[#FFD5C0] bg-white/80 p-4 md:p-5">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,0.9fr)_auto] lg:items-start">
+                  <div className="flex flex-col gap-4">
+                    <div>
+                      <label htmlFor={`character-name-${index}`} className="sr-only">
+                        {`Character ${index + 1} name`}
+                      </label>
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-[#020202]/45">
+                          Character {index + 1}
+                        </span>
+                        {index === 0 && (
+                          <span className="rounded-full bg-[#FC800A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FC800A]">
+                            Main character
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        id={`character-name-${index}`}
+                        type="text"
+                        value={character.name}
+                        onChange={(e) => handleCharacterNameChange(index, e.target.value)}
+                        onBlur={handleCharacterNamesBlur}
+                        suppressHydrationWarning
+                        placeholder={index === 0 ? "e.g. Emma" : `Character ${index + 1}`}
+                        maxLength={40}
+                        autoComplete="off"
+                        aria-invalid={shouldShowError("characters")}
+                        aria-describedby={shouldShowError("characters") ? "characters-error" : undefined}
+                        className={`w-full rounded-2xl px-5 py-3.5 bg-[#FCF7EE] border-2 text-[#020202]
+                                    text-base placeholder:text-[#020202]/30 focus:outline-none focus:ring-2
+                                    transition-all duration-200
+                                    ${shouldShowError("characters")
+                                      ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                                      : "border-[#FFD5C0] focus:border-[#FC800A] focus:ring-[#FC800A]/15"
+                                    }`}
+                      />
+                    </div>
 
-      {/* ② Age group */}
-      <StoryFormSection number={2} title="How old are they?">
-        <div className="flex flex-wrap gap-3" role="radiogroup" aria-label="Age group" aria-required="true">
-          {AGE_BANDS.map(({ value, label, emoji }) => {
-            const isSelected = storyData.ageBand === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                onClick={() => handleAgeBandSelect(value)}
-                suppressHydrationWarning
-                className={`flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-medium
-                            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                            transition-all duration-200
-                            ${isSelected
-                              ? "bg-[#FC800A] text-white border-2 border-[#FC800A] font-semibold shadow-[0_4px_14px_rgba(252,128,10,0.4)] scale-[1.04]"
-                              : "bg-[#FCF7EE] text-[#171E45] border-2 border-[#FFD5C0] hover:border-[#FC800A]/40 hover:bg-[#FBF1E3]"
-                            }`}
-              >
-                <span aria-hidden="true">{emoji}</span>
-                {label}
-              </button>
-            );
-          })}
+                    <div>
+                      <label htmlFor={`character-age-${index}`} className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#020202]/45">
+                        Age
+                      </label>
+                      <input
+                        id={`character-age-${index}`}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={character.age}
+                        onChange={(e) => handleCharacterAgeChange(index, e.target.value)}
+                        onBlur={handleCharacterNamesBlur}
+                        placeholder="e.g. 6"
+                        maxLength={3}
+                        className={`w-full rounded-2xl px-5 py-3.5 bg-[#FCF7EE] border-2 text-[#020202]
+                                    text-base placeholder:text-[#020202]/30 focus:outline-none focus:ring-2
+                                    transition-all duration-200
+                                    ${shouldShowError("characters")
+                                      ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                                      : "border-[#FFD5C0] focus:border-[#FC800A] focus:ring-[#FC800A]/15"
+                                    }`}
+                      />
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#020202]/45">
+                        Illustrations will depict this character at this exact age.
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Personality traits</p>
+                      <div className="flex flex-wrap gap-2.5" role="group" aria-label={`Personality traits for character ${index + 1}`}>
+                        {PERSONALITY_TRAITS.map((trait) => {
+                          const isSelected = character.traits.includes(trait);
+                          return (
+                            <button
+                              key={trait}
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => handleTraitToggle(index, trait)}
+                              suppressHydrationWarning
+                              className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium
+                                          focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                                          transition-all duration-200
+                                          ${isSelected
+                                            ? "bg-[#FC800A] text-white border-2 border-[#FC800A] shadow-[0_3px_12px_rgba(252,128,10,0.35)]"
+                                            : "bg-[#FCF7EE] text-[#171E45]/65 border-2 border-[#FFD5C0] hover:border-[#FC800A]/40 hover:text-[#171E45]"
+                                          }`}
+                            >
+                              <span aria-hidden="true">{TRAIT_ICONS[trait]}</span>
+                              {trait}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {renderCharacterPhotoSelector(index)}
+
+                  {isSignedIn && storyData.characters.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCharacter(index)}
+                      className="rounded-full border border-[#FFD5C0] bg-white px-4 py-2 text-sm font-semibold text-[#171E45]
+                                 hover:border-[#FC800A]/40 hover:text-[#FC800A]
+                                 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {isSignedIn ? (
+              <div className="flex items-center justify-between gap-3 text-xs text-[#020202]/45">
+                <span>{storyData.characters.length} / {MAX_LOGGED_IN_CHARACTERS} characters</span>
+                <button
+                  type="button"
+                  onClick={handleAddCharacter}
+                  disabled={storyData.characters.length >= MAX_LOGGED_IN_CHARACTERS}
+                  className="rounded-full bg-[#FBF1E3] px-4 py-2 text-sm font-semibold text-[#FC800A]
+                             hover:bg-[#FFE8D0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                             disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  + Add character
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-[#020202]/40">Sign in to include up to 5 characters in one story.</p>
+            )}
+
+            {shouldShowError("characters") && (
+              <ValidationError id="characters-error" message={errors.characters} />
+            )}
         </div>
-        {shouldShowError("ageBand") && <ValidationError message={errors.ageBand} />}
+        {photoError && <ValidationError message={photoError} />}
+        <p className="pl-10 text-xs text-[#020202]/35 flex items-center gap-1.5">
+          <span aria-hidden="true">🔒</span>
+          {isSignedIn
+            ? "Upload a new photo for each character or reuse photos from your profile library."
+            : "Your photo is used only to generate this story and is never stored."}
+        </p>
       </StoryFormSection>
 
-      {/* ③ Story theme — larger cards */}
-      <StoryFormSection number={3} title="Choose a story world" hint="Your child will be the hero of this adventure">
+      {/* ② Story theme — larger cards */}
+      <StoryFormSection number={2} title="Choose a story world" hint="Once the characters are ready, pick the world for their adventure.">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" role="radiogroup" aria-label="Story theme" aria-required="true">
           {STORY_THEMES.map((theme) => {
             const isSelected = storyData.selectedTheme === theme.label;
@@ -494,121 +1023,6 @@ export default function CreateStoryForm() {
           })}
         </div>
         {shouldShowError("selectedTheme") && <ValidationError message={errors.selectedTheme} />}
-      </StoryFormSection>
-
-      {/* ④ Personality traits */}
-      <StoryFormSection number={4} title="Any personality traits? (optional)" hint="We'll weave these into your child's character">
-        <div className="flex flex-wrap gap-2.5" role="group" aria-label="Personality traits">
-          {PERSONALITY_TRAITS.map((trait) => {
-            const isSelected = storyData.selectedTraits.includes(trait);
-            return (
-              <button
-                key={trait}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => handleTraitToggle(trait)}
-                suppressHydrationWarning
-                className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium
-                            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                            transition-all duration-200
-                            ${isSelected
-                              ? "bg-[#FC800A] text-white border-2 border-[#FC800A] shadow-[0_3px_12px_rgba(252,128,10,0.35)]"
-                              : "bg-[#FCF7EE] text-[#171E45]/65 border-2 border-[#FFD5C0] hover:border-[#FC800A]/40 hover:text-[#171E45]"
-                            }`}
-              >
-                <span aria-hidden="true">{TRAIT_ICONS[trait]}</span>
-                {trait}
-              </button>
-            );
-          })}
-        </div>
-      </StoryFormSection>
-
-      {/* ⑤ Photo upload — premium treatment */}
-      <StoryFormSection number={5} title="Add a photo of your child" hint="Optional but recommended — helps us personalize the illustrations">
-        {photoPreviewUrl && photoFile ? (
-          <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#FCF7EE] border-2 border-[#FFD5C0]">
-            <img
-              src={photoPreviewUrl}
-              alt="Uploaded photo preview"
-              className="w-16 h-16 rounded-xl object-cover border-2 border-[#FFD5C0] shadow-sm flex-shrink-0"
-            />
-            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[#171E45] truncate">{photoFile.name}</p>
-              <p className="text-xs text-[#020202]/35">
-                {(photoFile.size / 1024).toFixed(0)} KB
-              </p>
-              <div className="flex gap-3 mt-2">
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  suppressHydrationWarning
-                  className="text-xs font-semibold text-[#FC800A] hover:underline underline-offset-2 transition-colors"
-                >
-                  Change
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePhotoRemove}
-                  suppressHydrationWarning
-                  className="text-xs font-semibold text-red-400 hover:text-red-600 transition-colors"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-            <span className="text-2xl flex-shrink-0" aria-hidden="true">✓</span>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => photoInputRef.current?.click()}
-            suppressHydrationWarning
-            className="w-full rounded-2xl border-2 border-dashed border-[#FFD5C0] bg-[#FCF7EE]
-                       flex flex-col items-center gap-3 py-10 px-6 cursor-pointer
-                       hover:border-[#FC800A]/40 hover:bg-[#FBF1E3]
-                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                       transition-all duration-200"
-            aria-label="Upload a photo of your child"
-          >
-            {/* Camera icon in a warm circle */}
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center text-2xl
-                         shadow-[0_2px_10px_rgba(252,128,10,0.15)]"
-              style={{ background: "linear-gradient(135deg, #FBF1E3 0%, #FFE8D0 100%)" }}
-              aria-hidden="true"
-            >
-              📷
-            </div>
-            <div className="flex flex-col items-center gap-1 text-center">
-              <span className="text-sm font-semibold text-[#171E45]/80">Upload a photo</span>
-              <span className="text-sm text-[#020202]/45 max-w-[220px] leading-snug">
-                We&apos;ll turn it into your child&apos;s illustrated story character
-              </span>
-            </div>
-            <span className="text-xs text-[#020202]/30">JPG or PNG · max 4 MB</span>
-          </button>
-        )}
-
-        <input
-          ref={photoInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={handlePhotoInputChange}
-          suppressHydrationWarning
-          className="sr-only"
-          aria-hidden="true"
-          tabIndex={-1}
-        />
-
-        {photoError && <ValidationError message={photoError} />}
-
-        <p className="mt-3 text-xs text-[#020202]/35 flex items-center gap-1.5">
-          <span aria-hidden="true">🔒</span>
-          {isSignedIn
-            ? "Photo saved to your profile library for future stories."
-            : "Your photo is used only to generate this story and is never stored."}
-        </p>
       </StoryFormSection>
 
       {/* ── Submit ── */}

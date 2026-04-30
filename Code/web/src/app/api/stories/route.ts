@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadBase64Image } from "@/lib/supabase-server";
-import type { GeneratedStory } from "@/types/storybook";
+import type {
+  CharacterPhotoInput,
+  GeneratedStory,
+  PersistedCharacterPhoto,
+  StoryCharacterInput,
+  StoredStoryData,
+} from "@/types/storybook";
 
 interface SaveStoryRequest {
   title: string;
   coverText: string;
   theme: string;
   childName: string;
+  characterNames?: string[];
+  characters?: StoryCharacterInput[];
+  characterPhotos?: CharacterPhotoInput[];
   childPhotoUrl?: string;
   childPhotoBase64?: string;
   childPhotoMimeType?: string;
@@ -27,14 +36,58 @@ function getPersistedThumbnailUrl(options: {
   coverImageUrl?: string;
   pageImagesJson: Record<number, { imageUrl: string }>;
   childPhotoUrl?: string;
+  characterPhotos?: PersistedCharacterPhoto[];
 }) {
   return (
     options.coverImageUrl ??
     options.pageImagesJson[1]?.imageUrl ??
     Object.values(options.pageImagesJson)[0]?.imageUrl ??
+    options.characterPhotos?.[0]?.persistedPhotoUrl ??
     options.childPhotoUrl ??
     null
   );
+}
+
+async function persistCharacterPhoto(options: {
+  userId: string;
+  timestamp: number;
+  characterName: string;
+  photo: CharacterPhotoInput;
+}): Promise<PersistedCharacterPhoto | null> {
+  const { userId, timestamp, characterName, photo } = options;
+
+  if (photo.persistedPhotoUrl) {
+    return {
+      characterName,
+      persistedPhotoUrl: photo.persistedPhotoUrl,
+      uploadedImageName: photo.uploadedImageName,
+    };
+  }
+
+  if (!photo.uploadedImageBase64) {
+    return null;
+  }
+
+  const safeName = characterName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "character";
+  const persistedPhotoUrl = await uploadBase64Image(
+    "child-photos",
+    `${userId}/${timestamp}/${safeName}-photo.jpg`,
+    normalizePhotoDataUrl(photo.uploadedImageBase64, photo.uploadedImageMimeType)
+  );
+
+  await prisma.uploadedPhoto.create({
+    data: {
+      userId,
+      url: persistedPhotoUrl,
+      filename: photo.uploadedImageName ?? `${characterName}-photo.jpg`,
+    },
+  });
+
+  return {
+    characterName,
+    persistedPhotoUrl,
+    uploadedImageName: photo.uploadedImageName,
+  };
 }
 
 // GET /api/stories — list the signed-in user's saved stories
@@ -67,6 +120,7 @@ export async function GET() {
         coverImageUrl: story.coverImageUrl ?? undefined,
         childPhotoUrl: story.childPhotoUrl ?? undefined,
         pageImagesJson: story.pageImagesJson as Record<number, { imageUrl: string }>,
+        characterPhotos: (story.storyJson as StoredStoryData).characterPhotos,
       }),
     })),
   });
@@ -80,31 +134,56 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json()) as SaveStoryRequest;
-  const { title, coverText, theme, childName, childPhotoUrl, childPhotoBase64, childPhotoMimeType, coverImageBase64, pageImagesBase64, storyJson } = body;
+  const {
+    title,
+    coverText,
+    theme,
+    childName,
+    characterNames,
+    characters,
+    characterPhotos,
+    childPhotoUrl,
+    childPhotoBase64,
+    childPhotoMimeType,
+    coverImageBase64,
+    pageImagesBase64,
+    storyJson,
+  } = body;
 
   const userId = session.user.id;
   const timestamp = Date.now();
   let persistedChildPhotoUrl = childPhotoUrl;
+  let persistedCharacterPhotos: PersistedCharacterPhoto[] = [];
 
-  if (!persistedChildPhotoUrl && childPhotoBase64) {
-    try {
-      persistedChildPhotoUrl = await uploadBase64Image(
-        "child-photos",
-        `${userId}/${timestamp}/child-photo.jpg`,
-        normalizePhotoDataUrl(childPhotoBase64, childPhotoMimeType)
-      );
-
-      await prisma.uploadedPhoto.create({
-        data: {
-          userId,
-          url: persistedChildPhotoUrl,
-          filename: `${childName || "child"}-photo.jpg`,
+  const normalizedCharacterPhotos = characterPhotos?.length
+    ? characterPhotos
+    : [
+        {
+          characterName: childName,
+          persistedPhotoUrl: childPhotoUrl,
+          uploadedImageBase64: childPhotoBase64,
+          uploadedImageMimeType: childPhotoMimeType,
         },
-      });
-    } catch {
-      // Non-fatal — story can still save without a persisted child photo.
-    }
+      ];
+
+  try {
+    persistedCharacterPhotos = (
+      await Promise.all(
+        normalizedCharacterPhotos.map((photo, index) =>
+          persistCharacterPhoto({
+            userId,
+            timestamp,
+            characterName: photo.characterName || characterNames?.[index] || childName,
+            photo,
+          }).catch(() => null)
+        )
+      )
+    ).filter((photo): photo is PersistedCharacterPhoto => photo !== null);
+  } catch {
+    persistedCharacterPhotos = [];
   }
+
+  persistedChildPhotoUrl = persistedChildPhotoUrl ?? persistedCharacterPhotos[0]?.persistedPhotoUrl;
 
   // Upload cover image
   let coverImageUrl: string | undefined;
@@ -141,7 +220,15 @@ export async function POST(request: NextRequest) {
     coverImageUrl,
     pageImagesJson,
     childPhotoUrl: persistedChildPhotoUrl,
+    characterPhotos: persistedCharacterPhotos,
   });
+
+  const storedStoryJson: StoredStoryData = {
+    ...storyJson,
+    characterNames,
+    characters,
+    characterPhotos: persistedCharacterPhotos,
+  };
 
   const story = await prisma.story.create({
     data: {
@@ -150,12 +237,12 @@ export async function POST(request: NextRequest) {
       coverText,
       theme,
       childName,
-      coverImageUrl: persistedThumbnailUrl,
+      coverImageUrl: coverImageUrl ?? null,
       childPhotoUrl: persistedChildPhotoUrl ?? null,
-      storyJson: storyJson as object,
+      storyJson: storedStoryJson as object,
       pageImagesJson: pageImagesJson as object,
     },
   });
 
-  return NextResponse.json({ storyId: story.id });
+  return NextResponse.json({ storyId: story.id, thumbnailUrl: persistedThumbnailUrl });
 }

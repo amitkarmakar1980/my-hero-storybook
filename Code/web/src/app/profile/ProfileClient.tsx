@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 
@@ -20,6 +20,7 @@ interface PhotoItem {
   url: string;
   filename: string;
   createdAt: string;
+  canDelete?: boolean;
 }
 
 interface User {
@@ -47,8 +48,15 @@ export default function ProfileClient({
 }) {
   const router = useRouter();
   const [storyList, setStoryList] = useState(stories);
+  const [photoList, setPhotoList] = useState(photos);
   const [deletingStoryId, setDeletingStoryId] = useState<string | null>(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const initial = user.name?.[0]?.toUpperCase() ?? user.email?.[0]?.toUpperCase() ?? "?";
+  const selectedPhoto = useMemo(
+    () => photoList.find((photo) => photo.id === selectedPhotoId) ?? null,
+    [photoList, selectedPhotoId]
+  );
 
   const handleDeleteStory = async (storyId: string, storyTitle: string) => {
     const confirmed = window.confirm(`Delete "${storyTitle}" from your library?`);
@@ -65,6 +73,26 @@ export default function ProfileClient({
       window.alert("Could not delete that story. Please try again.");
     } finally {
       setDeletingStoryId(null);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string, filename: string) => {
+    const confirmed = window.confirm(`Delete \"${filename}\" from your saved photos?`);
+    if (!confirmed) return;
+
+    setDeletingPhotoId(photoId);
+    try {
+      const response = await fetch(`/api/profile/photos/${photoId}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("Failed to delete photo");
+      }
+
+      setPhotoList((current) => current.filter((photo) => photo.id !== photoId));
+      setSelectedPhotoId((current) => (current === photoId ? null : current));
+    } catch {
+      window.alert("Could not delete that photo. Please try again.");
+    } finally {
+      setDeletingPhotoId(null);
     }
   };
 
@@ -103,7 +131,7 @@ export default function ProfileClient({
                 </div>
                 <div className="w-px h-8 bg-[#FFD5C0]" aria-hidden="true" />
                 <div className="text-center">
-                  <p className="text-xl font-bold text-[#171E45]">{photos.length}</p>
+                  <p className="text-xl font-bold text-[#171E45]">{photoList.length}</p>
                   <p className="text-xs text-[#020202]/40">Photos</p>
                 </div>
               </div>
@@ -243,14 +271,14 @@ export default function ProfileClient({
             >
               My Photos
             </h2>
-            {photos.length > 0 && (
+            {photoList.length > 0 && (
               <span className="text-xs text-[#020202]/40 bg-[#FBF1E3] rounded-full px-3 py-1 border border-[#FFD5C0]">
-                {photos.length} saved
+                {photoList.length} saved
               </span>
             )}
           </div>
 
-          {photos.length === 0 ? (
+          {photoList.length === 0 ? (
             <div className="rounded-3xl border-2 border-dashed border-[#FFD5C0] bg-[#FBF1E3]/50 py-12 text-center">
               <p className="text-4xl mb-3" aria-hidden="true">📷</p>
               <p className="text-sm font-semibold text-[#171E45]/70 mb-1">No photos yet</p>
@@ -258,24 +286,89 @@ export default function ProfileClient({
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {photos.map((photo) => (
+              {photoList.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group rounded-2xl overflow-hidden border border-[#FFD5C0]/60 bg-[#FBF1E3] aspect-square
+                  className="group relative rounded-2xl overflow-hidden border border-[#FFD5C0]/60 bg-[#FBF1E3] aspect-square
                              shadow-[0_2px_8px_rgba(23,30,69,0.06)]"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.url}
-                    alt={photo.filename}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPhotoId(photo.id)}
+                    className="block w-full h-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+                    aria-label={`View ${photo.filename}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.filename}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </button>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#171E45]/65 via-[#171E45]/10 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3">
+                    <div className="min-w-0 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-[#171E45] shadow-sm backdrop-blur">
+                      <span className="block truncate max-w-[8rem]">{photo.filename}</span>
+                    </div>
+                    {photo.canDelete !== false && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeletePhoto(photo.id, photo.filename)}
+                        disabled={deletingPhotoId === photo.id}
+                        className="rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#171E45]/80 shadow-sm
+                                   hover:border-[#FC800A]/40 hover:text-[#171E45]
+                                   focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                                   disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingPhotoId === photo.id ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
       </div>
+
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171E45]/80 px-4 py-6 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={selectedPhoto.filename}
+          onClick={() => setSelectedPhotoId(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl overflow-hidden rounded-[2rem] bg-[#FFF9F2] shadow-[0_20px_80px_rgba(23,30,69,0.28)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-[#FFD5C0]/70 px-5 py-4">
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-[#171E45]">{selectedPhoto.filename}</p>
+                <p className="text-xs text-[#020202]/45">Saved {formatDate(selectedPhoto.createdAt)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoId(null)}
+                className="rounded-full border border-[#020202]/10 bg-white px-4 py-2 text-sm font-semibold text-[#171E45]
+                           hover:border-[#FC800A]/40 hover:text-[#FC800A]
+                           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-[80vh] overflow-auto bg-[radial-gradient(circle_at_top,_rgba(252,128,10,0.12),_transparent_45%),linear-gradient(180deg,_#fff9f2_0%,_#fbf1e3_100%)] p-4 md:p-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPhoto.url}
+                alt={selectedPhoto.filename}
+                className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl object-contain shadow-[0_12px_40px_rgba(23,30,69,0.18)]"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

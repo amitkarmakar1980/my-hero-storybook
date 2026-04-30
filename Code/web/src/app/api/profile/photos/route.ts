@@ -49,6 +49,7 @@ export async function GET() {
   const resolvedPhotos = await Promise.all(
     photos.map(async (photo) => ({
       ...photo,
+      storageUrl: photo.url,
       url: await resolveStorageUrl("child-photos", photo.url),
     }))
   );
