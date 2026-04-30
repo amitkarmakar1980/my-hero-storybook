@@ -51,7 +51,7 @@ export default async function ProfilePage() {
   ]);
 
   const resolvedStories = await Promise.all(
-    stories.map(async (story) => ({
+    stories.map(async (story: (typeof stories)[number]) => ({
       ...story,
       thumbnailUrl: await getThumbnailUrl(story),
       createdAt: story.createdAt.toISOString(),
@@ -59,7 +59,7 @@ export default async function ProfilePage() {
   );
 
   const fallbackStoryPhotos = stories
-    .flatMap((story) => {
+    .flatMap((story: (typeof stories)[number]) => {
       const storyJson = story.storyJson as unknown as StoredStoryData | null;
       const persistedPhotos = storyJson?.characterPhotos ?? [];
 

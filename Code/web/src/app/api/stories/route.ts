@@ -115,7 +115,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    stories: stories.map((story) => ({
+    stories: stories.map((story: (typeof stories)[number]) => ({
       ...story,
       thumbnailUrl: getPersistedThumbnailUrl({
         coverImageUrl: story.coverImageUrl ?? undefined,
