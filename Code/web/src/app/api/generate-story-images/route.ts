@@ -1,23 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { buildFinalImagePrompt, buildRetryImagePrompt } from "@/lib/prompts";
+import {
+  buildFinalImagePrompt,
+  buildFinalImagePromptFromContext,
+  buildRetryImagePrompt,
+  buildSharedImageGenerationContext,
+} from "@/lib/prompts";
 import type {
   CharacterProfile,
+  CharacterPhotoInput,
   GeneratedStory,
   PageImagePrompt,
   CoverImagePrompt,
   GeneratedStoryImage,
+  StoryImageGenerationContext,
 } from "@/types/storybook";
+
+export const runtime = "nodejs";
 
 // ── Request / response types ──────────────────────────────────────────────────
 
 interface GenerateStoryImagesRequest {
+  imageGenerationContext?: StoryImageGenerationContext;
   characterProfiles?: CharacterProfile[];
   characterProfile?: CharacterProfile;
+  characterPhotos?: CharacterPhotoInput[];
   story?: GeneratedStory;
   imagePrompts?: PageImagePrompt[];
   coverImagePrompt?: CoverImagePrompt;
 }
+
+type GeminiRequestPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
 
 interface GenerateStoryImagesResponse {
   images: GeneratedStoryImage[];
@@ -48,7 +63,12 @@ function generatePlaceholderImageUrl(pageNumber: number, seed: string): string {
 }
 
 const GEMINI_IMAGE_MODEL =
-  process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
+  process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.5-flash-image";
+const TARGET_PAGE_IMAGE_WIDTH = 1024;
+const TARGET_PAGE_IMAGE_HEIGHT = 1280;
+const TARGET_COVER_IMAGE_WIDTH = 1600;
+const TARGET_COVER_IMAGE_HEIGHT = 900;
+const STORYBOOK_BACKGROUND = { r: 251, g: 241, b: 227, alpha: 1 };
 
 function extractGeneratedImagePart(response: GeminiImageResponse):
   | { mimeType: string; data: string }
@@ -75,16 +95,93 @@ function extractGeneratedImagePart(response: GeminiImageResponse):
   return undefined;
 }
 
-async function generateGeminiImage(prompt: string): Promise<{ mimeType: string; data: string }> {
+async function normalizeGeneratedImage(image: {
+  mimeType: string;
+  data: string;
+}, options?: {
+  width?: number;
+  height?: number;
+  fit?: "cover" | "contain";
+}): Promise<{ mimeType: string; data: string }> {
+  const sharp = (await import("sharp")).default;
+  const inputBuffer = Buffer.from(image.data, "base64");
+  const width = options?.width ?? TARGET_PAGE_IMAGE_WIDTH;
+  const height = options?.height ?? TARGET_PAGE_IMAGE_HEIGHT;
+  const fit = options?.fit ?? "cover";
+
+  const normalizedBuffer = await sharp(inputBuffer)
+    .rotate()
+    .resize(width, height, {
+      fit,
+      position: "center",
+      background: STORYBOOK_BACKGROUND,
+    })
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toBuffer();
+
+  return {
+    mimeType: "image/jpeg",
+    data: normalizedBuffer.toString("base64"),
+  };
+}
+
+function buildReferenceImageParts(
+  characterProfiles: CharacterProfile[] | undefined,
+  characterPhotos: CharacterPhotoInput[] | undefined
+): GeminiRequestPart[] {
+  if (!characterProfiles || !characterPhotos) {
+    return [];
+  }
+
+  const parts: GeminiRequestPart[] = [];
+
+  for (const characterProfile of characterProfiles) {
+    const matchingPhoto = characterPhotos.find(
+      (characterPhoto) =>
+        characterPhoto.characterName === characterProfile.characterName &&
+        characterPhoto.uploadedImageBase64 &&
+        characterPhoto.uploadedImageMimeType
+    );
+
+    if (!matchingPhoto?.uploadedImageBase64 || !matchingPhoto.uploadedImageMimeType) {
+      continue;
+    }
+
+    parts.push({
+      text: `Reference photo for ${characterProfile.characterName}. Treat this image as the canonical identity reference. Preserve the same face, hairline, hair density, hairstyle, skin tone, and age appearance in the generated illustration.`,
+    });
+    parts.push({
+      inlineData: {
+        mimeType: matchingPhoto.uploadedImageMimeType,
+        data: matchingPhoto.uploadedImageBase64,
+      },
+    });
+  }
+
+  return parts;
+}
+
+async function generateGeminiImage(
+  prompt: string,
+  characterProfiles?: CharacterProfile[],
+  characterPhotos?: CharacterPhotoInput[]
+): Promise<{ mimeType: string; data: string }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY not configured");
   }
 
   const client = new GoogleGenAI({ apiKey });
+  const contents = [{
+    role: "user" as const,
+    parts: [
+      ...buildReferenceImageParts(characterProfiles, characterPhotos),
+      { text: prompt },
+    ],
+  }];
   const response = await client.models.generateContent({
     model: GEMINI_IMAGE_MODEL,
-    contents: prompt,
+    contents,
     config: {
       responseModalities: ["TEXT", "IMAGE"],
     },
@@ -116,7 +213,14 @@ async function generateGeminiImage(prompt: string): Promise<{ mimeType: string; 
 
 async function _generateValidatedPageImage(
   pageNumber: number,
-  initialPrompt: string
+  initialPrompt: string,
+  characterProfiles?: CharacterProfile[],
+  characterPhotos?: CharacterPhotoInput[],
+  normalizationOptions?: {
+    width?: number;
+    height?: number;
+    fit?: "cover" | "contain";
+  }
 ): Promise<GeneratedStoryImage> {
   const MAX_ATTEMPTS = 2;
   let currentPrompt = initialPrompt;
@@ -132,7 +236,7 @@ async function _generateValidatedPageImage(
 
     try {
       const generatedImage = await Promise.race([
-        generateGeminiImage(currentPrompt),
+        generateGeminiImage(currentPrompt, characterProfiles, characterPhotos),
         new Promise<never>((_, reject) => {
           controller.signal.addEventListener(
             "abort",
@@ -142,7 +246,8 @@ async function _generateValidatedPageImage(
         }),
       ]);
       clearTimeout(timeoutId);
-      const imageUrl = `data:${generatedImage.mimeType};base64,${generatedImage.data}`;
+      const normalizedImage = await normalizeGeneratedImage(generatedImage, normalizationOptions);
+      const imageUrl = `data:${normalizedImage.mimeType};base64,${normalizedImage.data}`;
       return { pageNumber, imageUrl };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -184,12 +289,26 @@ async function _generateValidatedPageImage(
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateStoryImagesRequest;
-    const { story, imagePrompts, coverImagePrompt } = body;
-    const characterProfiles = body.characterProfiles ?? (body.characterProfile ? [body.characterProfile] : undefined);
+    const { story, imagePrompts, coverImagePrompt, characterPhotos } = body;
+    const imageGenerationContext = body.imageGenerationContext;
+    const characterProfiles = imageGenerationContext?.characterProfiles ?? body.characterProfiles ?? (body.characterProfile ? [body.characterProfile] : undefined);
+    const resolvedCharacterPhotos = imageGenerationContext?.characterPhotos ?? characterPhotos;
+    const sharedContextPrompt = imageGenerationContext?.sharedContextPrompt
+      || (characterProfiles ? buildSharedImageGenerationContext(characterProfiles) : undefined);
 
     // Cover image request
     if (coverImagePrompt && !imagePrompts) {
-      const coverImage = await _generateValidatedPageImage(0, coverImagePrompt.prompt);
+      const coverImage = await _generateValidatedPageImage(
+        0,
+        coverImagePrompt.prompt,
+        characterProfiles,
+        resolvedCharacterPhotos,
+        {
+          width: TARGET_COVER_IMAGE_WIDTH,
+          height: TARGET_COVER_IMAGE_HEIGHT,
+          fit: "contain",
+        }
+      );
       return NextResponse.json({ images: [coverImage] } satisfies GenerateStoryImagesResponse);
     }
 
@@ -218,13 +337,17 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const prompt = buildFinalImagePrompt(characterProfiles, storyPage, {
-        reinforceConsistency: ip.pageNumber > 1,
-      });
+      const prompt = sharedContextPrompt
+        ? buildFinalImagePromptFromContext(sharedContextPrompt, storyPage, {
+            reinforceConsistency: ip.pageNumber > 1,
+          })
+        : buildFinalImagePrompt(characterProfiles, storyPage, {
+            reinforceConsistency: ip.pageNumber > 1,
+          });
 
       let image: GeneratedStoryImage;
       try {
-        image = await _generateValidatedPageImage(ip.pageNumber, prompt);
+        image = await _generateValidatedPageImage(ip.pageNumber, prompt, characterProfiles, resolvedCharacterPhotos);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (process.env.NODE_ENV === "development") {

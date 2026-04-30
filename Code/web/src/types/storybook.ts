@@ -48,6 +48,7 @@ export interface CharacterProfile {
   characterDescription: string;
   styleNotes: string;
   recurringVisualAnchors: string[];
+  exactAge?: number;
   appearanceAge?: string;
   faceShape?: string;
   skinTone?: string;
@@ -86,12 +87,20 @@ export interface CoverImagePrompt {
   prompt: string;
 }
 
+export interface StoryImageGenerationContext {
+  characterNames: string[];
+  characterProfiles: CharacterProfile[];
+  characterPhotos: CharacterPhotoInput[];
+  sharedContextPrompt: string;
+}
+
 export interface GeneratedStorybook {
   childName: string;
   characterNames?: string[];
   characters?: StoryCharacterInput[];
   characterPhotos?: CharacterPhotoInput[];
   characterProfiles?: CharacterProfile[];
+  imageGenerationContext?: StoryImageGenerationContext;
   characterProfile: CharacterProfile;
   story: GeneratedStory;
   coverImagePrompt: CoverImagePrompt;

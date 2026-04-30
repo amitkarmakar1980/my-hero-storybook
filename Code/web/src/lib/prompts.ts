@@ -67,7 +67,22 @@ export const IMAGE_PIPELINE_MODE: "baseline" | "advanced" = "advanced";
  * Kept tight so it doesn't compete with the scene prompt.
  */
 export function buildBaseStylePrompt(): string {
-  return `Premium children's picture book illustration. Full-color digital painting with warm, soft lighting. Expressive, child-friendly character design. Rich environmental storytelling. Single coherent illustrated scene. Published storybook quality — warm, magical, and visually engaging.`;
+  return `Premium children's picture book illustration. Full-color digital painting with warm, soft lighting. Expressive, child-friendly character design. Rich environmental storytelling. Single coherent illustrated scene. Published storybook quality — warm, magical, and visually engaging. Stylized illustration is allowed, but the child's facial identity must stay unmistakably faithful to the uploaded photo reference, including hairline, hair density, and whether the head is bald, thinning, or full-haired.`;
+}
+
+export function buildImageDimensionLock(): string {
+  return `PAGE FORMAT LOCK — hard constraint for every generated illustration in this book:
+Use the exact same portrait 4:5 storybook page format for every image.
+Every interior page illustration and the cover must share the same canvas shape, framing system, and overall image dimensions.
+Do not generate landscape, square, panoramic, ultra-wide, or mixed aspect ratios.
+Frame the subject and environment so the illustration fits cleanly inside that same vertical 4:5 storybook page every time.`;
+}
+
+export function buildCoverImageDimensionLock(): string {
+  return `COVER FORMAT LOCK — hard constraint for the cover illustration only:
+Use a wide landscape 16:9 storybook cover format.
+The cover image must be clearly horizontal, not portrait, not square, not panoramic, and not mixed orientation.
+Fill the full cover frame with a landscape composition so the illustration occupies the entire cover image container cleanly.`;
 }
 
 /**
@@ -76,10 +91,11 @@ export function buildBaseStylePrompt(): string {
 export function buildCharacterAnchor(profile: CharacterProfile | CharacterProfile[]): string {
   const profiles = normalizeProfiles(profile);
 
-  return `CHARACTER IDENTITY LOCK — keep every named character consistent across every page:
+  return `CHARACTER IDENTITY LOCK — keep every named character consistent across every page and as close as possible to the uploaded photo reference:
 ${profiles
   .map((characterProfile, index) => {
     const traits = [
+      typeof characterProfile.exactAge === "number" && `Exact age: ${characterProfile.exactAge}`,
       characterProfile.appearanceAge && `Age appearance: ${characterProfile.appearanceAge}`,
       characterProfile.skinTone && `Skin tone: ${characterProfile.skinTone}`,
       characterProfile.faceShape && `Face: ${characterProfile.faceShape}`,
@@ -103,7 +119,7 @@ ${recurringAnchors}`;
   })
   .join("\n\n")}
 
-Maintain each character's same face, hairstyle, skin tone, age appearance, and body proportions on every page. When multiple named characters appear together, keep them visually distinct and on-model.`;
+Maintain each character's same face, hairstyle, hairline, hair density, skin tone, eye shape, age appearance, and body proportions on every page. Preserve the same recognizable facial identity from the uploaded photo, not a generic child with similar features. Never add hair if the reference is bald or thinning, and never remove hair if the reference clearly has it. When multiple named characters appear together, keep them visually distinct and on-model.`;
 }
 
 /**
@@ -121,14 +137,15 @@ Illustrate the child as the clear focal point of this story moment. Show the set
  */
 export function buildShortNegatives(): string {
   return `No text, letters, numbers, speech bubbles, captions, or labels anywhere in the image.
-No black-and-white or sketch style. No collage or character sheet. No multiple copies of the child.`;
+No black-and-white or sketch style. No collage or character sheet. No multiple copies of the child.
+No landscape, square, panoramic, ultra-wide, or inconsistent aspect ratios. Do not change page dimensions between images.`;
 }
 
 /**
  * Concise self-check. One sentence, four conditions.
  */
 export function buildSimplePromptSelfCheck(): string {
-  return `Verify the image shows: (1) a full-color children's story scene, (2) the same child identity described above, (3) a single illustrated moment, (4) no text or lettering. If any condition is not met, adjust and generate the corrected image.`;
+  return `Verify the image shows: (1) a full-color children's story scene, (2) the same child identity described above, (3) a single illustrated moment, (4) no text or lettering, (5) the exact same portrait 4:5 page format used for every image in the book. If any condition is not met, adjust and generate the corrected image.`;
 }
 
 /**
@@ -141,15 +158,36 @@ export function buildFinalImagePrompt(
   page: StoryPage,
   options?: { reinforceConsistency?: boolean }
 ): string {
+  return buildFinalImagePromptFromContext(
+    buildSharedImageGenerationContext(profile),
+    page,
+    options
+  );
+}
+
+export function buildSharedImageGenerationContext(
+  profile: CharacterProfile | CharacterProfile[]
+): string {
   if (IMAGE_PIPELINE_MODE === "advanced") {
-    return _buildAdvancedImagePrompt(profile, page, options);
+    return [GLOBAL_STYLE_PREFIX, "", _buildCharacterAnchorAdvanced(profile)].join("\n");
   }
 
-  // Baseline: style → character → scene → negatives → self-check
+  return [buildBaseStylePrompt(), "", buildCharacterAnchor(profile)].join("\n");
+}
+
+export function buildFinalImagePromptFromContext(
+  sharedContextPrompt: string,
+  page: StoryPage,
+  options?: { reinforceConsistency?: boolean }
+): string {
+  if (IMAGE_PIPELINE_MODE === "advanced") {
+    return _buildAdvancedImagePromptFromContext(sharedContextPrompt, page, options);
+  }
+
   return [
-    buildBaseStylePrompt(),
+    sharedContextPrompt,
     "",
-    buildCharacterAnchor(profile),
+    buildImageDimensionLock(),
     "",
     buildScenePrompt(page),
     "",
@@ -166,14 +204,25 @@ export function buildCoverImagePrompt(
   profile: CharacterProfile | CharacterProfile[],
   storyTitle: string
 ): string {
-  const profiles = normalizeProfiles(profile);
-  const mainCharacter = profiles[0]?.characterName ?? "the main character";
-  const supportingCharacters = profiles.slice(1).map((character) => character.characterName);
+  return buildCoverImagePromptFromContext(
+    buildSharedImageGenerationContext(profile),
+    storyTitle,
+    normalizeProfiles(profile).map((character) => character.characterName)
+  );
+}
+
+export function buildCoverImagePromptFromContext(
+  sharedContextPrompt: string,
+  storyTitle: string,
+  characterNames: string[]
+): string {
+  const mainCharacter = characterNames[0] ?? "the main character";
+  const supportingCharacters = characterNames.slice(1);
 
   return [
-    `Premium children's picture book cover illustration. Full-color, warm, magical, visually striking. Strong central composition suitable for a book cover.`,
+    sharedContextPrompt,
     "",
-    buildCharacterAnchor(profile),
+    buildCoverImageDimensionLock(),
     "",
     `COVER SCENE: ${mainCharacter} stands prominently at the center in a confident, adventurous pose that captures the spirit of the story.${supportingCharacters.length > 0 ? ` Include ${supportingCharacters.join(", ")} nearby as clearly recognizable supporting characters.` : ""} The background should feel grand, magical, and specific to the story world, with warm lighting, rich color contrast, and premium bookstore-cover composition. Leave visual space at the top of the image — the title "${storyTitle}" will be added by the app and must not appear inside the illustration.`,
     "",
@@ -200,6 +249,8 @@ Composition: complete environment storytelling, not isolated portraits.
 Quality: published children's book illustration; editorial storybook standard.
 Emotional tone: magically warm, playful, wonder-filled, age-appropriate.
 Consistency: this exact style persists on every page of this book.
+Photo fidelity: the uploaded child photo is the canonical identity reference for face shape, facial proportions, hairline, hairstyle, skin tone, and other visible distinguishing features. Keep a strong likeness while rendering it as storybook art.
+Interior page format: every interior illustration in this book uses the exact same portrait 4:5 page dimensions and framing system.
 
 Visual anti-failures (explicit prohibitions):
 • NOT sketch-like, line-art-only, or technical drawing
@@ -231,6 +282,7 @@ Content restrictions (will reject image if present):
 ✗ Deformed anatomy: missing/extra fingers, incorrect proportions, disconnected limbs
 ✗ Off-model child (inconsistent with character profile from prior pages)
 ✗ Generic stock art or unrelated subject matter
+✗ Mixed aspect-ratio output for interior story pages
 `.trim();
 }
 
@@ -249,6 +301,7 @@ MANDATORY PROMPT SELF-CHECK — Before generating image, verify:
 ✓ Condition 5: Matches global style (premium full-color storybook illustration)?
 ✓ Condition 6: Free of requests for sketch, monochrome, line-art, or avatar-portrait?
 ✓ Condition 7: Environment and storytelling integration (not isolated floating portrait)?
+✓ Condition 8: Uses the required locked aspect ratio for this illustration type?
 
 If all ✓: Proceed with image generation. If any ✗: Revise, re-check, then generate.
 `.trim();
@@ -264,6 +317,7 @@ CHARACTER IDENTITY LOCK — Inject verbatim on every page, no modifications:
 ${profiles
   .map(
     (characterProfile, index) => `Character ${index + 1}: ${characterProfile.characterName}${index === 0 ? " (main character)" : ""}
+- Exact age: ${characterProfile.exactAge || "must match the stated age exactly"}
 - Age appearance: ${characterProfile.appearanceAge || "matches the uploaded photo"}
 - Face shape: ${characterProfile.faceShape || "matches the uploaded photo"}
 - Skin tone: ${characterProfile.skinTone || "matches the uploaded photo"}
@@ -276,19 +330,20 @@ ${profiles
   .join("\n\n")}
 
 MANDATORY CONSISTENCY RULES:
+→ Treat the uploaded photo as the canonical identity reference; do not genericize or redesign the face
 → Keep every named character visually distinct and consistent across all pages
 → Same face shape, facial proportions, and facial structure for each character
 → Same body type, height, and body proportions for each character
 → Same skin tone; do not shift or alter
-→ Same hair color, style, and texture for each character
-→ Same age appearance on every page
+→ Same hair color, style, texture, hairline, and hair density for each character
+→ Same exact age appearance on every page; do not age characters up or down
 → Keep the first character as the primary focal hero when multiple characters appear
 `.trim();
 }
 
 /** @internal Used by advanced mode only */
-function _buildAdvancedImagePrompt(
-  profile: CharacterProfile | CharacterProfile[],
+function _buildAdvancedImagePromptFromContext(
+  sharedContextPrompt: string,
   page: StoryPage,
   options?: { reinforceConsistency?: boolean }
 ): string {
@@ -297,9 +352,7 @@ function _buildAdvancedImagePrompt(
     : `PAGE 1 — VISUAL LANGUAGE ESTABLISHMENT:\nThis is the first page. Your illustration style, character treatment, and rendering approach will define the ENTIRE visual identity for all remaining pages.`;
 
   return `
-${GLOBAL_STYLE_PREFIX}
-
-${_buildCharacterAnchorAdvanced(profile)}
+${sharedContextPrompt}
 
 ${pageContext}
 
@@ -373,13 +426,17 @@ Task:
 Analyze the uploaded child photo and produce a stylized, child-safe character profile for this character in a colorful illustrated storybook.
 
 Requirements:
+- Treat the uploaded photo as the canonical identity reference for this character
+- Preserve the child's facial identity as faithfully as possible while converting it into premium storybook art
 - Focus only on visible visual traits
 - Keep the child warm, friendly, and age-appropriate
 - Do not infer sensitive attributes
 - Do not mention realism or photography
 - Make the result reusable across multiple pages
 - The uploaded photo is only for ${characterName}
-- The illustrated character must read visually as ${characterInput?.age ?? "the stated"} years old
+- The illustrated character must read visually as exactly ${characterInput?.age ?? "the stated"} years old
+- Do not make the character look older, younger, or more generic than the uploaded child
+- Call out face shape, hairline, hairstyle, eye area, smile, and any other distinctive visible features that should stay fixed in every illustration
 
 Return strict JSON:
 {
@@ -387,6 +444,7 @@ Return strict JSON:
   "characterDescription": "...",
   "styleNotes": "...",
   "recurringVisualAnchors": ["...", "...", "..."],
+  "exactAge": ${characterInput?.age ?? 6},
   "appearanceAge": "description of age appearance (e.g., 'appears 5-6 years old')",
   "faceShape": "face shape (e.g., 'round, soft features')",
   "skinTone": "skin tone (e.g., 'warm medium brown')",
@@ -429,6 +487,8 @@ Requirements:
 - ${characterNames.length > 1 ? `All of these characters are part of the main cast: ${characterList}` : `The child hero is ${primaryCharacter}`}
 - Every named character must appear in the story and be meaningfully included in the plot
 - Do not omit any named character from the 6-page story
+- The way each character behaves, speaks, and is described must fit their exact age
+- Story moments should feel plausible for these exact ages while still being magical and adventurous
 - Tone is warm, playful, magical, and safe
 - Structure: delightful beginning, small challenge, happy ending
 - Each page should have 2-4 short sentences
@@ -470,12 +530,14 @@ Improve this story for:
 - warmth
 - age appropriateness
 - lower repetition
+- exact age fit for every named character
 
 Keep:
 - same title
 - same 6-page structure
 - same general plot
 - every named character included in the story
+- each named character behaving like their exact entered age
 
 Return strict JSON in the same structure.
 

@@ -2,16 +2,13 @@ import { STORY_THEMES, type StoryThemeConfig } from "@/lib/storyThemes";
 
 function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
   return (
-    <button
-      type="button"
+    <article
       className="group relative overflow-hidden rounded-3xl p-7 flex flex-col gap-5 text-left w-full
                  shadow-[0_4px_20px_rgba(0,0,0,0.05)]
                  hover:scale-[1.025] hover:shadow-[0_16px_44px_rgba(0,0,0,0.12)]
-                 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                 active:scale-[0.99]
-                 transition-all duration-300 cursor-pointer"
+                 transition-all duration-300"
       style={{ backgroundColor: theme.bgColor }}
-      aria-label={`Select ${theme.label} as your story theme`}
+      aria-label={`${theme.label} story theme`}
     >
       {/* Radial glow */}
       <div
@@ -54,8 +51,8 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
         </p>
       </div>
 
-      {/* Bottom row: tag + arrow */}
-      <div className="flex items-center justify-between pt-1">
+      {/* Bottom row: theme tag */}
+      <div className="flex items-center pt-1">
         <span
           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
           style={{ backgroundColor: theme.tagBg, color: theme.tagText }}
@@ -63,16 +60,8 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
           <span aria-hidden="true">{theme.decorations[0]}</span>
           {theme.label}
         </span>
-        <span
-          className="text-sm font-semibold opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0
-                     transition-all duration-200"
-          style={{ color: theme.accentColor }}
-          aria-hidden="true"
-        >
-          Choose →
-        </span>
       </div>
-    </button>
+    </article>
   );
 }
 

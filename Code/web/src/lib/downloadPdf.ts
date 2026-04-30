@@ -45,9 +45,9 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
 
   const { title, coverText, story, coverImageUrl, pageImages } = opts;
 
-  // A4 portrait in mm
-  const W = 210;
-  const H = 297;
+  // A4 landscape in mm
+  const W = 297;
+  const H = 210;
   const MARGIN = 14;
   const CONTENT_W = W - MARGIN * 2;
 
@@ -57,7 +57,7 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
   const MUTED = "#7a7f9a";
   const ACCENT_BORDER = "#FFD5C0";
 
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
   // ── Embed Poppins ─────────────────────────────────────────────────────────
   // Fetch from Google Fonts static CDN (CSS2 API gives direct TTF/WOFF2 URLs)
@@ -117,46 +117,32 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
   pdf.setFillColor(CREAM);
   pdf.rect(0, 0, W, H, "F");
 
-  // Orange top bar
-  pdf.setFillColor(ORANGE);
-  pdf.rect(0, 0, W, 5, "F");
+  const COVER_TITLE_H = H * 0.2;
+  const COVER_IMAGE_H = H * 0.6;
+  const COVER_FOOTER_H = H * 0.14;
+  const coverImageY = COVER_TITLE_H;
+  const coverFooterY = H - COVER_FOOTER_H + 2;
 
-  let y = 16;
-
-  // Cover image — max height 110mm, preserving ratio
-  if (coverImageUrl) {
-    const drawnH = await drawImageFit(coverImageUrl, MARGIN, y, CONTENT_W, 110);
-    y += drawnH + 12;
-  } else {
-    y += 10;
-  }
-
-  // Title
   setFont("bold");
   pdf.setFontSize(24);
   pdf.setTextColor(NAVY);
-  const titleLines = pdf.splitTextToSize(title, CONTENT_W) as string[];
-  pdf.text(titleLines, W / 2, y, { align: "center" });
-  y += titleLines.length * 9 + 8;
+  const titleLines = pdf.splitTextToSize(title, CONTENT_W - 24) as string[];
+  const titleBlockHeight = titleLines.length * 8.5;
+  const titleY = Math.max(22, (COVER_TITLE_H - titleBlockHeight) / 2 + 10);
+  pdf.text(titleLines, W / 2, titleY, { align: "center" });
 
-  // Subtitle
+  if (coverImageUrl) {
+    await drawImageFit(coverImageUrl, MARGIN, coverImageY, CONTENT_W, COVER_IMAGE_H);
+  } else {
+    pdf.setFillColor(241, 232, 220);
+    pdf.roundedRect(MARGIN, coverImageY + 8, CONTENT_W, COVER_IMAGE_H - 16, 4, 4, "F");
+  }
+
   setFont("normal");
-  pdf.setFontSize(11);
+  pdf.setFontSize(9);
   pdf.setTextColor(MUTED);
-  const subtitleLines = pdf.splitTextToSize(coverText, CONTENT_W - 16) as string[];
-  pdf.text(subtitleLines, W / 2, y, { align: "center" });
-  y += subtitleLines.length * 5.5 + 14;
-
-  // Divider
-  pdf.setDrawColor(ACCENT_BORDER);
-  pdf.setLineWidth(0.8);
-  pdf.line(W / 2 - 18, y, W / 2 + 18, y);
-
-  // Footer
-  setFont("normal");
-  pdf.setFontSize(8);
-  pdf.setTextColor(ORANGE);
-  pdf.text("Created with My Hero Storybook", W / 2, H - 10, { align: "center" });
+  const subtitleLines = pdf.splitTextToSize(coverText, CONTENT_W - 40) as string[];
+  pdf.text(subtitleLines, W / 2, coverFooterY, { align: "center", lineHeightFactor: 1.45, maxWidth: CONTENT_W - 40 });
 
   // ── Story pages ────────────────────────────────────────────────────────────
   for (const page of story.pages) {
@@ -168,45 +154,44 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
     pdf.setFillColor(ACCENT_BORDER);
     pdf.rect(0, 0, W, 2, "F");
 
-    let py = MARGIN;
+    const SPREAD_GAP = 12;
+    const COLUMN_W = (CONTENT_W - SPREAD_GAP) / 2;
+    const SPREAD_TOP = MARGIN + 10;
+    const SPREAD_H = H - SPREAD_TOP - MARGIN - 10;
+    const IMAGE_X = MARGIN;
+    const TEXT_X = MARGIN + COLUMN_W + SPREAD_GAP;
+    const DIVIDER_X = MARGIN + COLUMN_W + SPREAD_GAP / 2;
 
-    // Page number circle
-    pdf.setFillColor(255, 237, 220);
-    pdf.circle(MARGIN + 4.5, py + 4.5, 4.5, "F");
-    setFont("bold");
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(ORANGE);
-    pdf.text(String(page.pageNumber), MARGIN + 4.5, py + 5.5, { align: "center" });
-    py += 15;
+    // Center separator for the landscape spread
+    pdf.setDrawColor(230, 212, 190);
+    pdf.setLineWidth(0.45);
+    pdf.line(DIVIDER_X, SPREAD_TOP, DIVIDER_X, SPREAD_TOP + SPREAD_H);
 
-    // Illustration — fits within 118mm tall max
+    // Illustration on the left page
     const illus = pageImages[page.pageNumber];
-    const MAX_ILLUS_H = 118;
+    const MAX_ILLUS_H = SPREAD_H;
     if (illus?.imageUrl) {
-      const drawnH = await drawImageFit(illus.imageUrl, MARGIN, py, CONTENT_W, MAX_ILLUS_H);
+      const drawnH = await drawImageFit(illus.imageUrl, IMAGE_X, SPREAD_TOP, COLUMN_W, MAX_ILLUS_H);
       // Thin border around image
       pdf.setDrawColor(220, 200, 180);
       pdf.setLineWidth(0.25);
       const { w: nw, h: nh } = await getImageNaturalSize(illus.imageUrl);
       const ratio = nw / nh;
-      let bW = CONTENT_W;
-      let bH = CONTENT_W / ratio;
+      let bW = COLUMN_W;
+      let bH = COLUMN_W / ratio;
       if (bH > MAX_ILLUS_H) { bH = MAX_ILLUS_H; bW = MAX_ILLUS_H * ratio; }
-      const bX = MARGIN + (CONTENT_W - bW) / 2;
-      pdf.roundedRect(bX, py, bW, bH, 2, 2);
-      py += drawnH + 10;
+      const bX = IMAGE_X + (COLUMN_W - bW) / 2;
+      pdf.roundedRect(bX, SPREAD_TOP, bW, bH, 2, 2);
     } else {
       pdf.setFillColor(241, 232, 220);
-      pdf.roundedRect(MARGIN, py, CONTENT_W, 80, 3, 3, "F");
-      py += 90;
+      pdf.roundedRect(IMAGE_X, SPREAD_TOP, COLUMN_W, MAX_ILLUS_H, 3, 3, "F");
     }
 
-    // Story text
     setFont("normal");
-    pdf.setFontSize(12.5);
+    pdf.setFontSize(12);
     pdf.setTextColor(NAVY);
-    const pageLines = pdf.splitTextToSize(page.text, CONTENT_W) as string[];
-    pdf.text(pageLines, MARGIN, py, { lineHeightFactor: 1.65 });
+    const pageLines = pdf.splitTextToSize(page.text, COLUMN_W) as string[];
+    pdf.text(pageLines, TEXT_X, SPREAD_TOP + 10, { lineHeightFactor: 1.65, maxWidth: COLUMN_W });
 
     // Footer
     setFont("normal");

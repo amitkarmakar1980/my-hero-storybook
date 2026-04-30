@@ -10,6 +10,7 @@ import type {
   CoverImagePrompt,
   CharacterProfile,
   CharacterPhotoInput,
+  StoryImageGenerationContext,
   GeneratedStory,
   StoryCharacterInput,
 } from "@/types/storybook";
@@ -54,11 +55,35 @@ function readStorybookDraft(): (GeneratedStorybook & DraftExtras) | null {
 }
 
 function getDraftCharacterProfiles(draft: GeneratedStorybook & DraftExtras): CharacterProfile[] {
+  if (draft.imageGenerationContext?.characterProfiles?.length) {
+    return draft.imageGenerationContext.characterProfiles;
+  }
+
   if (Array.isArray(draft.characterProfiles) && draft.characterProfiles.length > 0) {
     return draft.characterProfiles;
   }
 
   return draft.characterProfile ? [draft.characterProfile] : [];
+}
+
+function getDraftImageGenerationContext(
+  draft: GeneratedStorybook & DraftExtras
+): StoryImageGenerationContext | undefined {
+  if (draft.imageGenerationContext) {
+    return draft.imageGenerationContext;
+  }
+
+  const characterProfiles = getDraftCharacterProfiles(draft);
+  if (characterProfiles.length === 0) {
+    return undefined;
+  }
+
+  return {
+    characterNames: draft.characterNames ?? characterProfiles.map((character) => character.characterName),
+    characterProfiles,
+    characterPhotos: draft.characterPhotos ?? [],
+    sharedContextPrompt: "",
+  };
 }
 
 // ── Page image state ──────────────────────────────────────────────────────────
@@ -79,7 +104,7 @@ type PageImageRecord = {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function fetchPageImages(
-  characterProfiles: CharacterProfile[],
+  imageGenerationContext: StoryImageGenerationContext | undefined,
   story: GeneratedStory,
   imagePrompts: PageImagePrompt[],
   signal?: AbortSignal
@@ -87,7 +112,7 @@ async function fetchPageImages(
   const res = await fetch("/api/generate-story-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ characterProfiles, story, imagePrompts }),
+    body: JSON.stringify({ imageGenerationContext, story, imagePrompts }),
     signal,
   });
   if (!res.ok) throw new Error(`Image generation failed (${res.status})`);
@@ -96,13 +121,14 @@ async function fetchPageImages(
 }
 
 async function fetchCoverImage(
+  imageGenerationContext: StoryImageGenerationContext | undefined,
   coverImagePrompt: CoverImagePrompt,
   signal?: AbortSignal
 ): Promise<GeneratedStoryImage> {
   const res = await fetch("/api/generate-story-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ coverImagePrompt }),
+    body: JSON.stringify({ imageGenerationContext, coverImagePrompt }),
     signal,
   });
   if (!res.ok) throw new Error(`Cover image generation failed (${res.status})`);
@@ -136,20 +162,28 @@ function PageImage({
   isInvalid,
   invalidReason,
   onRetry,
+  aspectClass,
+  plain,
 }: {
   pageNumber: number;
   state: PageImageState | undefined;
   isInvalid?: boolean;
   invalidReason?: string;
   onRetry: (pageNumber: number) => void;
+  aspectClass?: string;
+  plain?: boolean;
 }) {
+  const resolvedAspectClass = aspectClass ?? "aspect-[4/5]";
+  const shellClass = plain ? "" : " rounded-2xl shadow-[0_8px_32px_rgba(23,30,69,0.15)] duration-300";
+  const fallbackShellClass = plain ? "" : " rounded-2xl";
+
   // Invalid image — show quality gate fallback
   if (isInvalid) {
     return (
       <div
-        className="w-full aspect-[4/5] rounded-2xl overflow-hidden
+        className={`w-full ${resolvedAspectClass}${fallbackShellClass} overflow-hidden
                    flex flex-col items-center justify-center gap-4 px-6 text-center
-                   bg-gradient-to-br from-[#FBF1E3] to-[#f8f3ea] border border-[#FFD5C0]/40"
+                   bg-gradient-to-br from-[#FBF1E3] to-[#f8f3ea] border border-[#FFD5C0]/40`}
         role="status"
         aria-live="polite"
         aria-label={`Page ${pageNumber} illustration needs improvement`}
@@ -181,8 +215,8 @@ function PageImage({
   if (!state || state.status === "loading") {
     return (
       <div
-        className="w-full aspect-[4/5] rounded-2xl overflow-hidden
-                   flex flex-col items-center justify-center gap-3"
+        className={`w-full ${resolvedAspectClass}${fallbackShellClass} overflow-hidden
+                   flex flex-col items-center justify-center gap-3`}
         style={{ background: "linear-gradient(160deg, #f5ede0 0%, #fce5c8 50%, #f5ede0 100%)" }}
         role="status"
         aria-live="polite"
@@ -196,8 +230,7 @@ function PageImage({
 
   if (state.status === "success") {
     return (
-      <div className="w-full aspect-[4/5] overflow-hidden rounded-2xl
-                      shadow-[0_8px_32px_rgba(23,30,69,0.15)] duration-300">
+      <div className={`w-full ${resolvedAspectClass} overflow-hidden${shellClass}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={state.imageUrl}
@@ -213,8 +246,8 @@ function PageImage({
   // error state
   return (
     <div
-      className="w-full aspect-[4/5] rounded-2xl bg-[#FBF1E3] border border-[#FFD5C0]/40
-                 flex flex-col items-center justify-center gap-4 px-6 text-center"
+      className={`w-full ${resolvedAspectClass}${fallbackShellClass} bg-[#FBF1E3] border border-[#FFD5C0]/40
+                 flex flex-col items-center justify-center gap-4 px-6 text-center`}
       role="status"
       aria-live="polite"
       aria-label={`Illustration failed for page ${pageNumber}`}
@@ -259,35 +292,35 @@ function StoryPageSpread({
   const state = imageData?.state;
   const isInvalid = imageData?.isInvalid ?? false;
   const invalidReason = imageData?.invalidReason;
+  const isEvenPage = pageNumber % 2 === 0;
 
   return (
-    <article className="mb-24 md:mb-32">
-      {/* Illustration with quality gate */}
-      <PageImage
-        pageNumber={pageNumber}
-        state={state}
-        isInvalid={isInvalid}
-        invalidReason={invalidReason}
-        onRetry={onRetry}
-      />
-
-      {/* Page text — improved typography and spacing */}
-      <div className="mt-10 px-3 md:px-6 max-w-2xl mx-auto">
-        {/* Page number pill */}
-        <div className="flex items-center gap-3 mb-5">
-          <span
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full
-                       bg-[#FC800A]/15 text-[#FC800A] text-xs font-bold flex-shrink-0"
-          >
-            {pageNumber}
-          </span>
-          <div className="flex-1 h-px bg-[#FFD5C0]/60" aria-hidden="true" />
+    <article className="relative mb-14 md:mb-20">
+      <div className="relative grid items-stretch gap-6 md:grid-cols-[1.3fr_0.7fr] md:gap-0">
+        <div
+          className="pointer-events-none absolute bottom-0 left-1/2 top-0 hidden w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.95),rgba(230,212,190,0))] md:block"
+          aria-hidden="true"
+        />
+        <div className={isEvenPage ? "order-1 md:order-2" : "order-1"}>
+          <div className="h-full">
+            <PageImage
+              pageNumber={pageNumber}
+              state={state}
+              isInvalid={isInvalid}
+              invalidReason={invalidReason}
+              onRetry={onRetry}
+              plain
+            />
+          </div>
         </div>
 
-        {/* Story text — larger, better line height, higher contrast */}
-        <p className="text-lg md:text-xl leading-relaxed md:leading-8 text-[#171E45] max-w-xl">
-          {pageText}
-        </p>
+        <div className={isEvenPage ? "order-2 md:order-1" : "order-2"}>
+          <div className="flex h-full flex-col justify-center px-6 py-6 md:px-12 md:py-12">
+            <p className="max-w-[28ch] text-lg leading-8 text-[#2F3555] md:text-[1.55rem] md:leading-10">
+              {pageText}
+            </p>
+          </div>
+        </div>
       </div>
     </article>
   );
@@ -365,7 +398,7 @@ export default function StoryPreviewClient() {
         setPageImages(initial);
 
         try {
-          const results = await fetchPageImages(getDraftCharacterProfiles(data), data.story, data.imagePrompts);
+          const results = await fetchPageImages(getDraftImageGenerationContext(data), data.story, data.imagePrompts);
           if (!isMounted) return;
           applyImageResults(results);
         } catch {
@@ -383,7 +416,7 @@ export default function StoryPreviewClient() {
         }
 
         try {
-          const coverResult = await fetchCoverImage(data.coverImagePrompt);
+          const coverResult = await fetchCoverImage(getDraftImageGenerationContext(data), data.coverImagePrompt);
           if (!isMounted) return;
           if (coverResult.imageUrl) {
             setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
@@ -412,7 +445,7 @@ export default function StoryPreviewClient() {
       if (!prompt) return;
       setPageImages((prev) => ({ ...prev, [pageNumber]: { state: { status: "loading" } } }));
       try {
-        const results = await fetchPageImages(getDraftCharacterProfiles(draft), draft.story, [prompt]);
+        const results = await fetchPageImages(getDraftImageGenerationContext(draft), draft.story, [prompt]);
         applyImageResults(results);
       } catch {
         setPageImages((prev) => ({
@@ -514,7 +547,7 @@ export default function StoryPreviewClient() {
     if (!draft) return;
     setCoverImageState({ status: "loading" });
     try {
-      const coverResult = await fetchCoverImage(draft.coverImagePrompt);
+      const coverResult = await fetchCoverImage(getDraftImageGenerationContext(draft), draft.coverImagePrompt);
       if (coverResult.imageUrl) {
         setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
       } else {
@@ -553,65 +586,81 @@ export default function StoryPreviewClient() {
 
   return (
     <>
-      {/* ── Story title ──────────────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-b from-[#FBF1E3] to-[#f8f3ea]">
-        <div className="mx-auto max-w-2xl px-5 py-16 md:py-20 text-center">
-          <p className="text-xs font-semibold text-[#FC800A] tracking-widest uppercase mb-4 letter-spacing">
-            ✨ A story starring your little hero ✨
-          </p>
-          <h1
-            className="text-5xl md:text-6xl lg:text-7xl text-[#171E45] leading-tight tracking-[-0.03em] mb-6"
-            style={{ fontFamily: "var(--font-rowdies)" }}
-          >
-            {story.title}
-          </h1>
-          <p className="text-lg md:text-xl text-[#020202]/70 leading-relaxed max-w-2xl mx-auto italic font-light">
-            {story.coverText}
-          </p>
-        </div>
-      </div>
+      {/* ── Story shell ──────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top,#fff9ef_0%,#f8f3ea_44%,#f0e5d4_100%)]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" aria-hidden="true" />
+        <div className="pointer-events-none absolute left-1/2 top-24 hidden h-[calc(100%-12rem)] w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.9),rgba(230,212,190,0))] xl:block" aria-hidden="true" />
 
-      {/* ── Front cover ──────────────────────────────────────────────────────── */}
-      <div className="bg-[#f8f3ea] pt-12 pb-8">
-        <div className="max-w-xl mx-auto px-4">
-          <PageImage pageNumber={0} state={coverImageState} onRetry={handleCoverRetry} />
-        </div>
-      </div>
+        <header className="mx-auto max-w-5xl px-4 pb-8 pt-8 md:px-6 md:pb-12 md:pt-12">
+          <div className="rounded-[2.25rem] border border-[#E6D4BE] bg-[rgba(255,252,246,0.88)] px-5 py-6 shadow-[0_20px_60px_rgba(83,57,33,0.12)] backdrop-blur-sm md:px-8 md:py-8">
+            <div className="flex min-h-[78vh] flex-col md:min-h-[820px]">
+              <div className="flex min-h-[18%] items-center justify-center px-2 pb-4 pt-2 text-center md:min-h-[20%] md:pb-6">
+                <h1
+                  className="max-w-4xl text-[2.1rem] leading-tight tracking-[-0.04em] text-[#171E45] md:text-[3.2rem] xl:text-[3.75rem]"
+                  style={{ fontFamily: "var(--font-rowdies)" }}
+                >
+                  {story.title}
+                </h1>
+              </div>
 
-      {/* ── Story pages ──────────────────────────────────────────────────────── */}
-      <main className="bg-[#f8f3ea]">
-        <section className="max-w-3xl mx-auto px-4 pt-16 pb-12">
-          {story.pages.map((page) => (
-            <StoryPageSpread
-              key={page.pageNumber}
-              pageNumber={page.pageNumber}
-              pageText={page.text}
-              imageData={pageImages[page.pageNumber]}
-              onRetry={handleRetry}
-            />
-          ))}
-        </section>
-      </main>
+              <div className="flex min-h-[58%] flex-1 items-center justify-center py-4 md:min-h-[60%] md:py-6">
+                <div className="w-full">
+                  <PageImage pageNumber={0} state={coverImageState} onRetry={handleCoverRetry} aspectClass="aspect-[16/9]" plain />
+                </div>
+              </div>
 
-      {/* ── Ending ───────────────────────────────────────────────────────────── */}
-      <div className="bg-[#f8f3ea] py-20">
-        <div className="max-w-2xl mx-auto px-6">
-          <div className="flex flex-col items-center text-center gap-6 py-12 rounded-3xl bg-gradient-to-b from-[#FBF1E3]/50 to-[#FBF1E3]/20">
-            <div className="flex items-center gap-3 text-3xl md:text-4xl" aria-hidden="true">
-              <span>✨</span>
-              <span>✦</span>
-              <span>✨</span>
+              <div className="flex min-h-[12%] items-end justify-center px-4 pb-2 pt-4 text-center md:min-h-[14%] md:px-10 md:pb-4">
+                <p className="max-w-3xl text-lg leading-8 text-[#2D345A] md:text-[1.3rem] md:leading-9">
+                  {story.coverText}
+                </p>
+              </div>
             </div>
-            <p
-              className="text-3xl md:text-4xl text-[#171E45] leading-snug max-w-lg tracking-[-0.01em]"
-              style={{ fontFamily: "var(--font-rowdies)" }}
-            >
-              And somewhere out there, another adventure was already waiting for{" "}
-              <span className="text-[#FC800A]">{heroName}</span>.
-            </p>
-            <p className="text-sm uppercase tracking-[0.15em] text-[#020202]/40 mt-2">
-              The End
-            </p>
+          </div>
+        </header>
+
+        {/* ── Story pages ──────────────────────────────────────────────────────── */}
+        <main>
+          <section className="mx-auto max-w-7xl px-4 pb-12 pt-4 md:px-6 md:pb-16">
+            <div className="mb-8 flex items-center justify-center gap-4 text-center">
+              <div className="hidden h-px w-16 bg-[#E5D0B8] md:block" aria-hidden="true" />
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#B57B41]">
+                Open the Story
+              </p>
+              <div className="hidden h-px w-16 bg-[#E5D0B8] md:block" aria-hidden="true" />
+            </div>
+
+            {story.pages.map((page) => (
+              <StoryPageSpread
+                key={page.pageNumber}
+                pageNumber={page.pageNumber}
+                pageText={page.text}
+                imageData={pageImages[page.pageNumber]}
+                onRetry={handleRetry}
+              />
+            ))}
+          </section>
+        </main>
+
+        {/* ── Ending ───────────────────────────────────────────────────────────── */}
+        <div className="px-4 pb-16 pt-4 md:px-6 md:pb-20">
+          <div className="mx-auto max-w-4xl rounded-[2.2rem] border border-[#E6D4BE] bg-[linear-gradient(180deg,rgba(255,252,246,0.94)_0%,rgba(251,241,227,0.9)_100%)] p-8 shadow-[0_18px_60px_rgba(86,60,37,0.11)] md:p-12">
+            <div className="flex flex-col items-center text-center gap-6">
+              <div className="flex items-center gap-3 text-3xl md:text-4xl" aria-hidden="true">
+                <span>✨</span>
+                <span>✦</span>
+                <span>✨</span>
+              </div>
+              <p
+                className="max-w-2xl text-3xl leading-snug tracking-[-0.02em] text-[#171E45] md:text-5xl"
+                style={{ fontFamily: "var(--font-rowdies)" }}
+              >
+                And somewhere out there, another adventure was already waiting for{" "}
+                <span className="text-[#FC800A]">{heroName}</span>.
+              </p>
+              <p className="text-sm uppercase tracking-[0.25em] text-[#7E7468]">
+                The End
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -619,7 +668,7 @@ export default function StoryPreviewClient() {
       {/* ── Save status banner ───────────────────────────────────────────────── */}
       {session?.user && saveStatus !== "idle" && (
         <div className="bg-[#f8f3ea] pt-4">
-          <div className="mx-auto max-w-2xl px-6">
+          <div className="mx-auto max-w-4xl px-6">
             {saveStatus === "saving" && (
               <div className="flex items-center gap-2.5 rounded-2xl bg-[#FBF1E3] border border-[#FFD5C0] px-4 py-3 text-sm text-[#171E45]/70">
                 <Spinner className="w-4 h-4 text-[#FC800A]" />
@@ -654,44 +703,53 @@ export default function StoryPreviewClient() {
 
       {/* ── Action bar ───────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-b from-[#f8f3ea] to-[#FBF1E3] pb-20 pt-12">
-        <div className="mx-auto max-w-2xl px-6 flex flex-col sm:flex-row items-center justify-center gap-5">
-          <button
-            type="button"
-            onClick={() => router.push("/create")}
-            className="rounded-full bg-[#FC800A] px-8 py-4 text-base font-semibold text-white w-full sm:w-auto
-                       shadow-[0_6px_20px_rgba(252,128,10,0.38)]
-                       hover:bg-[#e5720a] hover:-translate-y-0.5
-                       hover:shadow-[0_8px_26px_rgba(252,128,10,0.48)]
-                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                       active:scale-[0.97] transition-all duration-200"
-          >
-            ✦ Create another story
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={!allImagesLoaded || isPdfGenerating}
-            className="rounded-full border-2 border-[#020202]/10 bg-white/60 px-8 py-4 text-base font-semibold text-[#171E45] w-full sm:w-auto
-                       hover:border-[#FC800A]/40 hover:bg-white hover:-translate-y-0.5
-                       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                       active:scale-[0.97] transition-all duration-200
-                       disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-          >
-            {isPdfGenerating ? (
-              <span className="flex items-center justify-center gap-2">
-                <Spinner className="w-4 h-4 text-[#FC800A]" />
-                Generating PDF…
-              </span>
-            ) : (
-              <span className="flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#FC800A]" aria-hidden="true">
-                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-                </svg>
-                Download PDF
-              </span>
-            )}
-          </button>
+        <div className="mx-auto max-w-4xl px-6">
+          <div className="rounded-[2rem] border border-[#E6D4BE] bg-[rgba(255,252,246,0.88)] p-6 shadow-[0_18px_50px_rgba(86,60,37,0.12)] backdrop-blur-sm md:p-8">
+            <div className="mb-6 text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#B57B41]">
+                Keep This Story Close
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-5">
+              <button
+                type="button"
+                onClick={() => router.push("/create")}
+                className="rounded-full bg-[#FC800A] px-8 py-4 text-base font-semibold text-white w-full sm:w-auto
+                           shadow-[0_6px_20px_rgba(252,128,10,0.38)]
+                           hover:bg-[#e5720a] hover:-translate-y-0.5
+                           hover:shadow-[0_8px_26px_rgba(252,128,10,0.48)]
+                           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                           active:scale-[0.97] transition-all duration-200"
+              >
+                ✦ Create another story
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={!allImagesLoaded || isPdfGenerating}
+                className="rounded-full border-2 border-[#020202]/10 bg-white/60 px-8 py-4 text-base font-semibold text-[#171E45] w-full sm:w-auto
+                           hover:border-[#FC800A]/40 hover:bg-white hover:-translate-y-0.5
+                           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                           active:scale-[0.97] transition-all duration-200
+                           disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {isPdfGenerating ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner className="w-4 h-4 text-[#FC800A]" />
+                    Generating PDF…
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#FC800A]" aria-hidden="true">
+                      <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                      <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                    </svg>
+                    Download PDF
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

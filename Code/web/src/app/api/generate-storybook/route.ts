@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
   buildCharacterProfilePrompt,
+  buildCoverImagePromptFromContext,
+  buildSharedImageGenerationContext,
   buildStoryGenerationPrompt,
   buildStoryRefinementPrompt,
-  buildCoverImagePrompt,
 } from "@/lib/prompts";
 import type {
   StoryInput,
@@ -14,6 +15,7 @@ import type {
   GeneratedStory,
   PageImagePrompt,
   CoverImagePrompt,
+  StoryImageGenerationContext,
 } from "@/types/storybook";
 
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.5-flash";
@@ -240,9 +242,19 @@ export async function POST(request: NextRequest) {
       pageNumber: p.pageNumber,
     }));
 
-    // Build cover prompt directly — no Claude round-trip needed
+    const imageGenerationContext: StoryImageGenerationContext = {
+      characterNames: normalizedCharacterNames,
+      characterProfiles,
+      characterPhotos: normalizedCharacterPhotos,
+      sharedContextPrompt: buildSharedImageGenerationContext(characterProfiles),
+    };
+
     const coverImagePrompt: CoverImagePrompt = {
-      prompt: buildCoverImagePrompt(characterProfiles, refinedStory.title),
+      prompt: buildCoverImagePromptFromContext(
+        imageGenerationContext.sharedContextPrompt,
+        refinedStory.title,
+        normalizedCharacterNames
+      ),
     };
 
     return NextResponse.json({
@@ -251,6 +263,7 @@ export async function POST(request: NextRequest) {
       characters: normalizedInput.characters,
       characterPhotos: normalizedInput.characterPhotos,
       characterProfiles,
+      imageGenerationContext,
       characterProfile: characterProfiles[0],
       story: refinedStory,
       coverImagePrompt,

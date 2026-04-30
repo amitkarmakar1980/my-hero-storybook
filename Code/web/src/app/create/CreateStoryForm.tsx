@@ -17,10 +17,10 @@ const TRAIT_ICONS: Record<StoryTrait, string> = {
 };
 
 const MAX_PHOTO_SIZE_BYTES = 4 * 1024 * 1024;
-const TARGET_UPLOAD_PHOTO_BYTES = 350 * 1024;
-const MAX_UPLOAD_PHOTO_DIMENSION = 1400;
-const INITIAL_UPLOAD_PHOTO_QUALITY = 0.86;
-const MIN_UPLOAD_PHOTO_QUALITY = 0.55;
+const TARGET_UPLOAD_PHOTO_BYTES = 420 * 1024;
+const MAX_UPLOAD_PHOTO_DIMENSION = 1500;
+const INITIAL_UPLOAD_PHOTO_QUALITY = 0.9;
+const MIN_UPLOAD_PHOTO_QUALITY = 0.6;
 const MAX_LOGGED_IN_CHARACTERS = 5;
 
 const LOADING_STAGES = [
@@ -264,7 +264,7 @@ function StoryFormSection({
           {hint && <p className="text-xs text-[#020202]/40 mt-0.5 leading-relaxed">{hint}</p>}
         </div>
       </div>
-      <div className="pl-10">{children}</div>
+      <div className="pl-0 md:pl-10">{children}</div>
     </fieldset>
   );
 }
@@ -953,23 +953,43 @@ export default function CreateStoryForm() {
       >
         <div className="flex flex-col gap-4">
             {storyData.characters.map((character, index) => (
-              <div key={index} className="rounded-[1.75rem] border border-[#FFD5C0] bg-white/80 p-4 md:p-5">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,0.9fr)_auto] lg:items-start">
+              <div key={index} className="rounded-[1.75rem] border border-[#FFD5C0] bg-white/80 p-4 md:p-5 lg:p-6">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-[#020202]/45">
+                        Character {index + 1}
+                      </span>
+                      {index === 0 && (
+                        <span className="rounded-full bg-[#FC800A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FC800A]">
+                          Main character
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs leading-relaxed text-[#020202]/45">
+                      Add the exact age, photo, and traits so this character stays recognizable in every illustration.
+                    </p>
+                  </div>
+
+                  {isSignedIn && storyData.characters.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCharacter(index)}
+                      className="rounded-full border border-[#FFD5C0] bg-white px-4 py-2 text-sm font-semibold text-[#171E45]
+                                 hover:border-[#FC800A]/40 hover:text-[#FC800A]
+                                 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
+                    >
+                      Remove character
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.95fr)] xl:items-start">
                   <div className="flex flex-col gap-4">
                     <div>
                       <label htmlFor={`character-name-${index}`} className="sr-only">
                         {`Character ${index + 1} name`}
                       </label>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[#020202]/45">
-                          Character {index + 1}
-                        </span>
-                        {index === 0 && (
-                          <span className="rounded-full bg-[#FC800A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FC800A]">
-                            Main character
-                          </span>
-                        )}
-                      </div>
                       <input
                         id={`character-name-${index}`}
                         type="text"
@@ -1049,18 +1069,6 @@ export default function CreateStoryForm() {
                   </div>
 
                   {renderCharacterPhotoSelector(index)}
-
-                  {isSignedIn && storyData.characters.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveCharacter(index)}
-                      className="rounded-full border border-[#FFD5C0] bg-white px-4 py-2 text-sm font-semibold text-[#171E45]
-                                 hover:border-[#FC800A]/40 hover:text-[#FC800A]
-                                 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]"
-                    >
-                      Remove
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -1088,7 +1096,7 @@ export default function CreateStoryForm() {
             )}
         </div>
         {photoError && <ValidationError message={photoError} />}
-        <p className="pl-10 text-xs text-[#020202]/35 flex items-center gap-1.5">
+        <p className="text-xs text-[#020202]/35 flex items-center gap-1.5 md:pl-10">
           <span aria-hidden="true">🔒</span>
           {isSignedIn
             ? "Upload a new photo for each character or reuse photos from your profile library."
