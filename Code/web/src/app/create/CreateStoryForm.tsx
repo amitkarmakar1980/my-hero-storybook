@@ -17,6 +17,10 @@ const TRAIT_ICONS: Record<StoryTrait, string> = {
 };
 
 const MAX_PHOTO_SIZE_BYTES = 4 * 1024 * 1024;
+const TARGET_UPLOAD_PHOTO_BYTES = 350 * 1024;
+const MAX_UPLOAD_PHOTO_DIMENSION = 1400;
+const INITIAL_UPLOAD_PHOTO_QUALITY = 0.86;
+const MIN_UPLOAD_PHOTO_QUALITY = 0.55;
 const MAX_LOGGED_IN_CHARACTERS = 5;
 
 const LOADING_STAGES = [
@@ -30,22 +34,146 @@ const LOADING_STAGES = [
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function normalizeUploadFilename(filename: string) {
+  const trimmed = filename.trim() || "character-photo";
+  return trimmed.replace(/\.[^.]+$/, "") + ".jpg";
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
+async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+async function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  const objectUrl = URL.createObjectURL(blob);
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not process the selected photo."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Could not prepare the selected photo."));
+        return;
+      }
+
+      resolve(blob);
+    }, "image/jpeg", quality);
+  });
+}
+
+async function preparePhotoForUpload(blob: Blob): Promise<{ base64: string; blob: Blob; mimeType: string }> {
+  const image = await loadImageFromBlob(blob);
+  const largestSide = Math.max(image.naturalWidth, image.naturalHeight);
+  const scale = largestSide > MAX_UPLOAD_PHOTO_DIMENSION
+    ? MAX_UPLOAD_PHOTO_DIMENSION / largestSide
+    : 1;
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Could not prepare the selected photo.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = INITIAL_UPLOAD_PHOTO_QUALITY;
+  let optimizedBlob = await canvasToJpegBlob(canvas, quality);
+
+  while (optimizedBlob.size > TARGET_UPLOAD_PHOTO_BYTES && quality > MIN_UPLOAD_PHOTO_QUALITY) {
+    quality = Math.max(MIN_UPLOAD_PHOTO_QUALITY, quality - 0.08);
+    optimizedBlob = await canvasToJpegBlob(canvas, quality);
+  }
+
+  const dataUrl = await blobToDataUrl(optimizedBlob);
+  const [, base64 = ""] = dataUrl.split(",", 2);
+
+  return {
+    base64,
+    blob: optimizedBlob,
+    mimeType: optimizedBlob.type || "image/jpeg",
+  };
+}
+
+function extractApiErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message;
+  }
+
+  return null;
+}
+
+function buildResponseError(response: Response, responseText: string): string {
+  const trimmedText = responseText.trim();
+
+  if (response.status === 413 || /^Request Entity Too Large/i.test(trimmedText)) {
+    return "The selected photo is too large for the deployed app. Try a smaller image.";
+  }
+
+  if (trimmedText) {
+    return trimmedText;
+  }
+
+  return `Request failed (${response.status}).`;
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const responseText = await response.text();
+  const fallbackError = buildResponseError(response, responseText);
+
+  if (!responseText) {
+    if (!response.ok) {
+      throw new Error(fallbackError);
+    }
+
+    return {} as T;
+  }
+
+  try {
+    const payload = JSON.parse(responseText) as T;
+
+    if (!response.ok) {
+      throw new Error(extractApiErrorMessage(payload) ?? fallbackError);
+    }
+
+    return payload;
+  } catch {
+    if (!response.ok) {
+      throw new Error(fallbackError);
+    }
+
+    throw new Error("Received an invalid server response.");
+  }
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,6 +203,15 @@ interface SavedPhoto {
   storageUrl: string;
   filename: string;
   createdAt: string;
+}
+
+interface PreparedCharacterPhotoPayload {
+  characterName: string;
+  uploadedImageBase64?: string;
+  uploadedImageMimeType?: string;
+  uploadedImageName?: string;
+  persistedPhotoUrl?: string;
+  uploadBlob?: Blob;
 }
 
 type CharacterPhotoSelection = {
@@ -214,11 +351,7 @@ export default function CreateStoryForm() {
       setIsLoadingSavedPhotos(true);
       try {
         const response = await fetch("/api/profile/photos");
-        if (!response.ok) {
-          throw new Error("Failed to load saved photos");
-        }
-
-        const data = (await response.json()) as { photos?: SavedPhoto[] };
+        const data = await readJsonResponse<{ photos?: SavedPhoto[] }>(response);
         if (isMounted) {
           setSavedPhotos(data.photos ?? []);
         }
@@ -470,18 +603,21 @@ export default function CreateStoryForm() {
       }));
       const characterNames = characters.map((character) => character.name);
       const childName = formatCharacterNames(characterNames);
-      const characterPhotoPayloads = await Promise.all(
+      const preparedCharacterPhotos = await Promise.all(
         characterNames.map(async (characterName, index) => {
           const selection = characterPhotos[index] ?? createEmptyCharacterPhotoSelection();
           let uploadedImageBase64: string | undefined;
           let uploadedImageMimeType: string | undefined;
           let uploadedImageName: string | undefined;
+          let uploadBlob: Blob | undefined;
           const persistedPhotoUrl = selection.selectedSavedPhoto?.storageUrl;
 
           if (selection.file) {
-            uploadedImageBase64 = await fileToBase64(selection.file);
-            uploadedImageMimeType = selection.file.type;
-            uploadedImageName = selection.file.name;
+            const preparedPhoto = await preparePhotoForUpload(selection.file);
+            uploadedImageBase64 = preparedPhoto.base64;
+            uploadedImageMimeType = preparedPhoto.mimeType;
+            uploadedImageName = normalizeUploadFilename(selection.file.name);
+            uploadBlob = preparedPhoto.blob;
           } else if (selection.selectedSavedPhoto) {
             const photoResponse = await fetch(selection.selectedSavedPhoto.url);
             if (!photoResponse.ok) {
@@ -489,9 +625,11 @@ export default function CreateStoryForm() {
             }
 
             const photoBlob = await photoResponse.blob();
-            uploadedImageBase64 = await blobToBase64(photoBlob);
-            uploadedImageMimeType = photoBlob.type || "image/jpeg";
-            uploadedImageName = selection.selectedSavedPhoto.filename;
+            const preparedPhoto = await preparePhotoForUpload(photoBlob);
+            uploadedImageBase64 = preparedPhoto.base64;
+            uploadedImageMimeType = preparedPhoto.mimeType;
+            uploadedImageName = normalizeUploadFilename(selection.selectedSavedPhoto.filename);
+            uploadBlob = preparedPhoto.blob;
           }
 
           return {
@@ -500,29 +638,39 @@ export default function CreateStoryForm() {
             uploadedImageMimeType,
             uploadedImageName,
             persistedPhotoUrl,
-          };
+            uploadBlob,
+          } satisfies PreparedCharacterPhotoPayload;
         })
       );
 
+      const characterPhotoPayloads = preparedCharacterPhotos.map((characterPhoto) => ({
+        characterName: characterPhoto.characterName,
+        uploadedImageBase64: characterPhoto.uploadedImageBase64,
+        uploadedImageMimeType: characterPhoto.uploadedImageMimeType,
+        uploadedImageName: characterPhoto.uploadedImageName,
+        persistedPhotoUrl: characterPhoto.persistedPhotoUrl,
+      }));
+
       const photoUploadPromise = Promise.all(
-        characterPhotoPayloads.map(async (characterPhoto) => {
-          if (!characterPhoto.uploadedImageBase64 || !isSignedIn || characterPhoto.persistedPhotoUrl) {
+        preparedCharacterPhotos.map(async (characterPhoto) => {
+          if (!characterPhoto.uploadBlob || !isSignedIn || characterPhoto.persistedPhotoUrl) {
             return characterPhoto.persistedPhotoUrl;
           }
 
           try {
+            const formData = new FormData();
+            formData.set(
+              "photo",
+              characterPhoto.uploadBlob,
+              characterPhoto.uploadedImageName ?? `${characterPhoto.characterName}-photo.jpg`
+            );
+
             const res = await fetch("/api/profile/photos", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                photoBase64: characterPhoto.uploadedImageBase64,
-                filename: characterPhoto.uploadedImageName ?? `${characterPhoto.characterName}-photo.jpg`,
-                mimeType: characterPhoto.uploadedImageMimeType ?? "image/jpeg",
-              }),
+              body: formData,
             });
 
-            if (!res.ok) return undefined;
-            const { photo } = await res.json() as { photo: { url: string } };
+            const { photo } = await readJsonResponse<{ photo: { url: string } }>(res);
             return photo.url as string;
           } catch {
             return undefined;
@@ -551,8 +699,7 @@ export default function CreateStoryForm() {
       });
 
       const [res, uploadedPhotoUrls] = await Promise.all([storyPromise, photoUploadPromise]);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Story generation failed. Please try again.");
+      const data = await readJsonResponse<Record<string, unknown>>(res);
 
       const persistedCharacterPhotos = characterPhotoPayloads.map((characterPhoto, index) => ({
         ...characterPhoto,
