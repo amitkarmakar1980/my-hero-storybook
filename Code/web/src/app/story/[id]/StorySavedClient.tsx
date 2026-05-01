@@ -305,7 +305,9 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
           heroName={heroName}
           coverImageUrl={story.coverImageUrl}
           storyJson={story.storyJson}
-          pageImagesJson={story.pageImagesJson}
+          pageImagesJson={Object.fromEntries(
+            Object.entries(generatedImages).map(([k, url]) => [Number(k), { imageUrl: url }])
+          )}
           onClose={() => setReadingMode(false)}
         />
       )}

@@ -23,12 +23,18 @@ interface ReadingModeProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildPages(props: Omit<ReadingModeProps, "onClose">): ReadingPage[] {
+  // Normalize keys — JSON serialization turns numeric keys into strings
+  const imageMap: Record<number, string | undefined> = {};
+  for (const [k, v] of Object.entries(props.pageImagesJson)) {
+    imageMap[Number(k)] = v.imageUrl;
+  }
+
   const pages: ReadingPage[] = [
     { type: "cover", imageUrl: props.coverImageUrl, title: props.title, coverText: props.coverText },
     ...props.storyJson.pages.map((p) => ({
       type: "story" as const,
       pageNumber: p.pageNumber,
-      imageUrl: props.pageImagesJson[p.pageNumber]?.imageUrl,
+      imageUrl: imageMap[p.pageNumber],
       text: p.text,
     })),
     { type: "end", heroName: props.heroName },
