@@ -1244,7 +1244,7 @@ export default function CreateStoryForm() {
                             transition-all duration-200 group
                             ${isSelected
                               ? "ring-2 scale-[1.03] shadow-[0_8px_28px_rgba(0,0,0,0.15)]"
-                              : "ring-1 ring-transparent hover:ring-[#FFD5C0] hover:-translate-y-0.5 hover:shadow-lg"
+                              : "ring-1 ring-[#E5D0B8] hover:ring-[#FC800A]/40 hover:-translate-y-0.5 hover:shadow-lg"
                             }`}
                 style={{ ringColor: isSelected ? theme.accentColor : undefined } as React.CSSProperties}
               >
