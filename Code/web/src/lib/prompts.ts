@@ -310,56 +310,43 @@ export function buildCoverImagePromptFromContext(
 // Re-enable by setting IMAGE_PIPELINE_MODE = "advanced"
 // =============================================================================
 
-// Global style prefix used by the advanced path
-export const GLOBAL_STYLE_PREFIX = `
-VISUAL STYLE DIRECTIVE — Critical, locked, unchanging across all pages:
-
-This is a PREMIUM CHILDREN'S PICTURE BOOK ILLUSTRATION.
-Art direction: warm, whimsical, editorially polished storybook scene.
-Rendering: fully finished, premium storybook illustration in the specifically requested illustration style.
-Character design: rounded, friendly, expressive child-friendly faces.
-Composition: complete environment storytelling, not isolated portraits.
-Quality: published children's book illustration; editorial storybook standard.
-Emotional tone: magically warm, playful, wonder-filled, age-appropriate.
-Consistency: this exact style persists on every page of this book.
-Photo fidelity: the uploaded child photo is the canonical identity reference for face shape, facial proportions, hairline, hairstyle, skin tone, and other visible distinguishing features. Keep a strong likeness while rendering it as storybook art.
-Interior page format: every interior illustration in this book uses the exact same portrait 4:5 page dimensions and framing system.
-
-Visual anti-failures (explicit prohibitions):
-• NOT unfinished rough sketch, bare technical drawing, or accidental low-detail draft
-• NOT manga or anime style unless that exact style was explicitly requested
-• NOT storyboard, concept art sheet, or multiple-pose grid
-• NOT character sheet, pose turnaround, repeated-clone composition, or multi-panel collage
-• NOT monochrome, black-and-white, or limited-palette drawing
-• NOT photorealistic, 3D-rendered, or photograph
-• NOT UI mockup, app screen, or digital interface
-• NOT portrait on blank floating background; must show environment
-• NOT avatar-style isolated head; must be integrated into scene
-• NOT generic stock children's art; must be premium storybook quality
-`.trim();
-
 function buildAdvancedGlobalStylePrefix(illustrationStyle?: IllustrationStyle): string {
-  return `${GLOBAL_STYLE_PREFIX}\nMANDATORY STYLE OVERRIDE — this selected style outranks any generic storybook default:\n${getIllustrationStyleDirective(illustrationStyle)}`;
+  const styleLabel = getIllustrationStyleOption(illustrationStyle).label;
+  const styleDirective = getIllustrationStyleDirective(illustrationStyle);
+
+  return `ILLUSTRATION STYLE — this is the single most important instruction in this prompt:
+Generate as ${styleLabel}: ${styleDirective}
+Every visual decision — rendering technique, texture, color treatment, line quality, finish — must follow this style. Do not default to a generic storybook look.
+
+CHILDREN'S PICTURE BOOK REQUIREMENTS:
+- Character design: rounded, friendly, expressive child-friendly faces
+- Composition: complete environment storytelling, not isolated portraits
+- Emotional tone: warm, playful, wonder-filled, age-appropriate
+- Consistency: this exact style and character identity persists on every page
+- Photo fidelity: the uploaded child photo is the canonical identity reference — keep face shape, hairline, hair density, skin tone, and age appearance faithful to the photo while rendering in the chosen style
+- Interior page format: portrait 4:5 storybook page for every illustration
+
+Hard prohibitions (these override nothing above — the style directive above takes full precedence):
+• NOT a character sheet, pose grid, or multi-panel collage
+• NOT storyboard or concept art layout
+• NOT photorealistic or 3D-rendered
+• NOT portrait on blank background — must show a full scene environment
+• NOT avatar-style isolated head — must be integrated into the scene
+• NOT any rendered text, letters, numbers, signs, or labels anywhere`.trim();
 }
 
 export function buildNegativeConstraints(): string {
   return `
-HARD NEGATIVE REQUIREMENTS — No image ever produced should match ANY of these:
-
-Content restrictions (will reject image if present):
-✗ Any rendered text: letters, words, numbers, captions, labels, speech bubbles, dialogue boxes
-✗ Any typographic content: handwriting, signs, posters, banners, logos, titles, page numbers
-✗ Any printed or written marks: watermarks, copyright text, subtitles
-✗ Black-and-white or monochrome rendering
-✗ Unfinished rough sketch, bare line-art-only draft, or technical drawing appearance when that look was not explicitly requested by the chosen illustration style
+HARD NEGATIVE REQUIREMENTS:
+✗ Any rendered text: letters, words, numbers, captions, labels, speech bubbles, signs, posters
 ✗ Character sheet, pose grid, repeated-clone composition, or multi-panel collage layout
 ✗ Photorealistic or 3D-render look
-✗ Manga, anime, or storyboard style unless explicitly requested
-✗ Avatar portrait on blank background (must be scene-integrated)
+✗ Storyboard or concept art layout
+✗ Avatar portrait on blank background — must be a full scene
 ✗ Deformed anatomy: missing/extra fingers, incorrect proportions, disconnected limbs
-✗ Off-model child (inconsistent with character profile from prior pages)
-✗ Generic stock art or unrelated subject matter
+✗ Off-model child (inconsistent with character profile)
 ✗ Mixed aspect-ratio output for interior story pages
+NOTE: monochrome, sketch-like, flat, or textured rendering is ALLOWED when it matches the chosen illustration style.
 `.trim();
 }
 
@@ -369,18 +356,14 @@ export function buildNegativeConstraintsBlock(): string {
 
 export function buildPromptSelfCheckBlock(): string {
   return `
-MANDATORY PROMPT SELF-CHECK — Before generating image, verify:
+SELF-CHECK before generating:
+✓ Is the illustration style (named at the top of this prompt) clearly visible in the rendering technique?
+✓ Same child identity — face, hair, skin tone, age — as the character anchor?
+✓ One coherent story scene with environment, not an isolated portrait?
+✓ Zero text, letters, or symbols anywhere in the image?
+✓ Correct portrait 4:5 aspect ratio?
 
-✓ Condition 1: Same child identity as established in the character anchor?
-✓ Condition 2: Same face shape, hairstyle, skin tone, age appearance, body proportions?
-✓ Condition 3: ONE coherent story scene with clear setting?
-✓ Condition 4: NO instruction to render text, letters, numbers, or typographic content?
-✓ Condition 5: Matches the specifically selected illustration style, not just a generic storybook look?
-✓ Condition 6: Fully rendered and polished in the requested style, not an accidental unfinished sketch, avatar portrait, or low-detail draft?
-✓ Condition 7: Environment and storytelling integration (not isolated floating portrait)?
-✓ Condition 8: Uses the required locked aspect ratio for this illustration type?
-
-If all ✓: Proceed with image generation. If any ✗: Revise, re-check, then generate.
+If any ✗: adjust and generate correctly.
 `.trim();
 }
 

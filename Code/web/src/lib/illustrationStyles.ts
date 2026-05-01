@@ -42,7 +42,7 @@ export const ILLUSTRATION_STYLE_OPTIONS: IllustrationStyleOption[] = [
     label: "Watercolor",
     shortDescription: "Dreamier washes, softer edges, airy texture, and luminous color bleeding.",
     promptDirective:
-      "Art style: watercolor children's illustration. Soft translucent paint washes, gentle pigment blooms, textured paper feel, lighter edges, and dreamy atmospheric color transitions.",
+      "Art style: traditional watercolor painting. Render the entire illustration with visible wet-on-wet paint bleeds, soft feathered edges where colors bleed into each other, translucent layered washes of color, granulation texture, and white paper showing through in highlights. Colors should feel luminous and slightly desaturated, never opaque or flat. Outlines, if present, should be loose and painted — not crisp ink lines. The overall feel is dreamy, delicate, and hand-painted on textured watercolor paper.",
     sampleGridCol: 1,
     sampleYPercent: 17,
     preview: {
