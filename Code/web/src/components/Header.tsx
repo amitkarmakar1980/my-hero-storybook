@@ -4,7 +4,10 @@ import { useRouter } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
 
+const ADMIN_EMAILS = ["amitkarmakar1980@gmail.com"];
+
 function UserMenu({ name, image, email }: { name?: string | null; image?: string | null; email?: string | null }) {
+  const isAdmin = !!email && ADMIN_EMAILS.includes(email);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -66,6 +69,20 @@ function UserMenu({ name, image, email }: { name?: string | null; image?: string
             </svg>
             My Profile
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); router.push("/admin"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-[#171E45]
+                         hover:bg-[#FCF7EE] transition-colors duration-150 text-left"
+            >
+              <svg className="w-4 h-4 text-[#FC800A]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M8.34 1.804A1 1 0 0 1 9.32 1h1.36a1 1 0 0 1 .98.804l.17.862a6.537 6.537 0 0 1 1.329.768l.847-.254a1 1 0 0 1 1.174.454l.68 1.177a1 1 0 0 1-.205 1.273l-.668.56a6.6 6.6 0 0 1 0 1.532l.668.56a1 1 0 0 1 .205 1.274l-.68 1.177a1 1 0 0 1-1.174.454l-.847-.254a6.537 6.537 0 0 1-1.329.768l-.17.862A1 1 0 0 1 10.68 13H9.32a1 1 0 0 1-.98-.804l-.17-.862a6.538 6.538 0 0 1-1.329-.768l-.847.254a1 1 0 0 1-1.174-.454l-.68-1.177a1 1 0 0 1 .205-1.273l.668-.56a6.6 6.6 0 0 1 0-1.532l-.668-.56a1 1 0 0 1-.205-1.274l.68-1.177a1 1 0 0 1 1.174-.454l.847.254A6.537 6.537 0 0 1 8.17 2.666l.17-.862ZM10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" clipRule="evenodd"/>
+                <path d="M3 17a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Z"/>
+              </svg>
+              Admin
+            </button>
+          )}
           <button
             type="button"
             onClick={() => { setOpen(false); signOut({ callbackUrl: "/" }); }}

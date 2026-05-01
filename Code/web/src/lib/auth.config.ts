@@ -15,9 +15,11 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      if (nextUrl.pathname.startsWith("/profile") && !isLoggedIn) {
-        return false;
-      }
+      const email = auth?.user?.email;
+      const ADMIN_EMAILS = ["amitkarmakar1980@gmail.com"];
+
+      if (nextUrl.pathname.startsWith("/profile") && !isLoggedIn) return false;
+      if (nextUrl.pathname.startsWith("/admin") && !ADMIN_EMAILS.includes(email ?? "")) return false;
       return true;
     },
   },

@@ -1,5 +1,5 @@
 // Prompts for story generation
-import type { StoryInput, CharacterProfile, StoryPage, StoryCharacterInput } from "@/types/storybook";
+import type { StoryInput, CharacterProfile, StoryPage, StoryCharacterInput, StoryLength } from "@/types/storybook";
 
 function normalizeProfiles(profileOrProfiles: CharacterProfile | CharacterProfile[]): CharacterProfile[] {
   return Array.isArray(profileOrProfiles) ? profileOrProfiles : [profileOrProfiles];
@@ -47,6 +47,30 @@ function formatCharacterNames(names: string[]): string {
   if (names.length === 1) return names[0];
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+function getStoryLength(input: StoryInput): StoryLength {
+  return input.storyLength ?? "short";
+}
+
+function buildStoryLengthRequirements(input: StoryInput): string {
+  const storyLength = getStoryLength(input);
+
+  if (storyLength === "long") {
+    return `Story length: long.
+- Each page should be 6-8 sentences and at least 100 words.
+- Keep each page substantial, immersive, and descriptive while still readable aloud.`;
+  }
+
+  if (storyLength === "standard") {
+    return `Story length: standard.
+- Each page should be 4-6 sentences and roughly 70-90 words.
+- Give each page more narrative detail than a short picture-book page without becoming dense.`;
+  }
+
+  return `Story length: short.
+- Each page should be 2-4 sentences and roughly 45-65 words.
+- Keep the writing concise, airy, and illustration-friendly.`;
 }
 
 // =============================================================================
@@ -126,19 +150,18 @@ Maintain each character's same face, hairstyle, hairline, hair density, skin ton
  * Simple scene description. What the child is doing, where, and how they feel.
  */
 export function buildScenePrompt(page: StoryPage): string {
-  return `SCENE FOR PAGE ${page.pageNumber}:
-"${page.text}"
+  return `ILLUSTRATION FOR PAGE ${page.pageNumber}:
+Story moment: "${page.text}"
 
-Illustrate the child as the clear focal point of this story moment. Show the setting, action, and emotion described above. Include full environmental context, cinematic composition, expressive poses, layered foreground/background detail, and a strong sense of motion or wonder where appropriate. This must read like a premium storybook spread, not a generic portrait.`;
+Draw exactly what happens in this moment: the child character performing the specific action described, in the specific setting described, with the specific emotion described. Show the full scene — foreground, background, environment, lighting, and atmosphere. The child must be the clear focal point. Use expressive poses and rich environmental detail. This must be a complete illustrated scene, not a portrait or character study.`;
 }
 
 /**
  * Short negative constraints. Focused on the most common failure modes only.
  */
 export function buildShortNegatives(): string {
-  return `No text, letters, numbers, speech bubbles, captions, or labels anywhere in the image.
-No black-and-white or sketch style. No collage or character sheet. No multiple copies of the child.
-No landscape, square, panoramic, ultra-wide, or inconsistent aspect ratios. Do not change page dimensions between images.`;
+  return `ABSOLUTE RULE — NO TEXT: Do not render any text, words, letters, numbers, signs, labels, captions, speech bubbles, or written marks anywhere in the image. Not on signs, not on books, not on clothing, not anywhere.
+No black-and-white or sketch style. No collage or character sheet. No multiple copies of the child.`;
 }
 
 /**
@@ -175,6 +198,45 @@ export function buildSharedImageGenerationContext(
   return [buildBaseStylePrompt(), "", buildCharacterAnchor(profile)].join("\n");
 }
 
+export function buildImagenCharacterDescription(profile: CharacterProfile): string {
+  const parts = [
+    profile.exactAge && `${profile.exactAge}-year-old`,
+    profile.skinTone,
+    profile.faceShape ? `face with ${profile.faceShape}` : null,
+    profile.hair,
+    profile.eyes ? `${profile.eyes}` : null,
+    profile.build,
+    profile.signatureFeatures,
+  ].filter(Boolean);
+
+  const appearance = parts.length > 0 ? parts.join(", ") : profile.characterDescription;
+  const outfit = profile.defaultOutfit ?? "colorful age-appropriate clothing";
+
+  return `${profile.characterName}: ${appearance}, wearing ${outfit}.`;
+}
+
+export function buildImagenSharedContext(profile: CharacterProfile | CharacterProfile[]): string {
+  const profiles = normalizeProfiles(profile);
+  const characterLines = profiles.map(buildImagenCharacterDescription).join(" ");
+
+  return `Children's picture book illustration. Full-color painting, warm soft lighting, whimsical and magical feel, rich detail, published storybook quality. No text, no words, no letters, no signs, no labels anywhere. Not a sketch or line art. Not monochrome.
+
+Character: ${characterLines}`;
+}
+
+/** For Imagen models — short, visual, no instruction language. Negative prompt handles the "don'ts". */
+export function buildImagenPagePrompt(sharedContext: string, page: StoryPage): string {
+  return `${sharedContext}\n\nScene: ${page.text}`;
+}
+
+/** For Imagen cover — short, visual. */
+export function buildImagenCoverPrompt(sharedContext: string, storyTitle: string, characterNames: string[]): string {
+  const mainCharacter = characterNames[0] ?? "the main character";
+  const supporting = characterNames.slice(1);
+  return `${sharedContext}\n\nScene: ${mainCharacter} stands confidently at the center in an adventurous pose, set against a grand magical world full of color and wonder.${supporting.length > 0 ? ` ${supporting.join(" and ")} appear nearby.` : ""} Wide landscape composition, rich warm lighting, vibrant colors, storybook cover quality.`;
+}
+
+/** For Gemini models — full instruction prompt with style directives and self-check. */
 export function buildFinalImagePromptFromContext(
   sharedContextPrompt: string,
   page: StoryPage,
@@ -211,6 +273,7 @@ export function buildCoverImagePrompt(
   );
 }
 
+/** For Gemini models — full instruction prompt for cover. */
 export function buildCoverImagePromptFromContext(
   sharedContextPrompt: string,
   storyTitle: string,
@@ -356,13 +419,16 @@ ${sharedContextPrompt}
 
 ${pageContext}
 
-SCENE FOR THIS PAGE (this is the only part that changes):
+ILLUSTRATION SCENE — page ${page.pageNumber}:
 Story moment: "${page.text}"
-Illustration task:
-- Depict the exact scene and action described above
-- Show the child as clear focal point in this specific moment
-- Include full environment context: setting, atmosphere, supporting elements
-- Express the emotion and action of the scene
+
+Illustration task — draw exactly what this sentence describes:
+- Show the specific action the character is performing
+- Show the specific location/setting described
+- Show the emotional expression matching the moment
+- Include full environment: foreground, midground, background, lighting, atmosphere
+- The named character must be the clear visual focal point
+- Rich environmental detail, cinematic composition, expressive pose
 
 ${buildNegativeConstraints()}
 
@@ -491,7 +557,7 @@ Requirements:
 - Story moments should feel plausible for these exact ages while still being magical and adventurous
 - Tone is warm, playful, magical, and safe
 - Structure: delightful beginning, small challenge, happy ending
-- Each page should have 2-4 short sentences
+- ${buildStoryLengthRequirements(input).replace(/\n/g, "\n- ")}
 - Avoid scary, dark, violent, or copyrighted content
 - Keep the language age-appropriate
 
@@ -531,6 +597,7 @@ Improve this story for:
 - age appropriateness
 - lower repetition
 - exact age fit for every named character
+- matching the requested page length for a ${getStoryLength(input)} story
 
 Keep:
 - same title
@@ -538,6 +605,7 @@ Keep:
 - same general plot
 - every named character included in the story
 - each named character behaving like their exact entered age
+- ${buildStoryLengthRequirements(input).replace(/\n/g, "\n- ")}
 
 Return strict JSON in the same structure.
 

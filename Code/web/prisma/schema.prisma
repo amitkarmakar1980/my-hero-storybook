@@ -63,6 +63,12 @@ model UploadedPhoto {
   createdAt DateTime @default(now())
 }
 
+model AppConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model Story {
   id             String   @id @default(cuid())
   userId         String

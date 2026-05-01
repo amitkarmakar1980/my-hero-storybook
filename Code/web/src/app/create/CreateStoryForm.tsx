@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 import { STORY_THEMES } from "@/lib/storyThemes";
-import type { StoryTheme, StoryTrait } from "@/types/storybook";
+import type { StoryTheme, StoryTrait, StoryLength } from "@/types/storybook";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -15,6 +15,28 @@ const TRAIT_ICONS: Record<StoryTrait, string> = {
   Funny: "😄",
   Kind: "💛",
 };
+
+const STORY_LENGTH_OPTIONS: Array<{
+  value: StoryLength;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "short",
+    label: "Short",
+    description: "Best for quick read-alouds with more room for illustrations.",
+  },
+  {
+    value: "standard",
+    label: "Standard",
+    description: "Adds more story detail on each page without feeling too dense.",
+  },
+  {
+    value: "long",
+    label: "Long",
+    description: "Most detailed version, with fuller page-by-page storytelling.",
+  },
+];
 
 const MAX_PHOTO_SIZE_BYTES = 4 * 1024 * 1024;
 const TARGET_UPLOAD_PHOTO_BYTES = 420 * 1024;
@@ -185,6 +207,7 @@ interface StoryCreationData {
     traits: StoryTrait[];
   }>;
   selectedTheme: StoryTheme | "";
+  storyLength: StoryLength;
 }
 
 interface RequiredFieldErrors {
@@ -306,6 +329,7 @@ export default function CreateStoryForm() {
   const [storyData, setStoryData] = useState<StoryCreationData>({
     characters: [createEmptyCharacterDraft()],
     selectedTheme: "",
+    storyLength: "short",
   });
   const [touched, setTouched] = useState<FieldTouchedState>({
     characters: false,
@@ -503,6 +527,9 @@ export default function CreateStoryForm() {
     setStoryData((prev) => ({ ...prev, selectedTheme: theme }));
     setTouched((prev) => ({ ...prev, selectedTheme: true }));
   };
+  const handleStoryLengthSelect = (storyLength: StoryLength) => {
+    setStoryData((prev) => ({ ...prev, storyLength }));
+  };
   const handleTraitToggle = (index: number, trait: StoryTrait) =>
     setStoryData((prev) => ({
       ...prev,
@@ -685,6 +712,7 @@ export default function CreateStoryForm() {
           childName,
           characterNames,
           theme: storyData.selectedTheme as StoryTheme,
+          storyLength: storyData.storyLength,
           characters,
           traits: characters[0]?.traits,
           characterPhotos: characterPhotoPayloads,
@@ -710,6 +738,7 @@ export default function CreateStoryForm() {
       sessionStorage.setItem("heroStorybookDraft", JSON.stringify({
         ...data,
         theme: storyData.selectedTheme,
+        storyLength: storyData.storyLength,
         childName,
         characterNames,
         characters,
@@ -1178,6 +1207,41 @@ export default function CreateStoryForm() {
           })}
         </div>
         {shouldShowError("selectedTheme") && <ValidationError message={errors.selectedTheme} />}
+      </StoryFormSection>
+
+      <StoryFormSection number={3} title="Choose story length" hint="Short is the default. You can switch to a fuller page-by-page version here.">
+        <div className="grid gap-3 md:grid-cols-3" role="radiogroup" aria-label="Story length">
+          {STORY_LENGTH_OPTIONS.map((option) => {
+            const isSelected = storyData.storyLength === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => handleStoryLengthSelect(option.value)}
+                className={`rounded-2xl border p-4 text-left transition-all duration-200
+                            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                            ${isSelected
+                              ? "border-[#FC800A] bg-[#FFF4E8] shadow-[0_8px_22px_rgba(252,128,10,0.12)]"
+                              : "border-[#FFD5C0] bg-white/80 hover:border-[#FC800A]/35 hover:bg-[#FFF9F2]"
+                            }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-base font-semibold text-[#171E45]" style={{ fontFamily: "var(--font-rowdies)" }}>
+                    {option.label}
+                  </span>
+                  {isSelected && (
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FC800A] text-[11px] font-bold text-white" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-[#020202]/55">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
       </StoryFormSection>
 
       {/* ── Submit ── */}

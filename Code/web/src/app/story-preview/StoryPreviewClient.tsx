@@ -173,7 +173,7 @@ function PageImage({
   aspectClass?: string;
   plain?: boolean;
 }) {
-  const resolvedAspectClass = aspectClass ?? "aspect-[4/5]";
+  const resolvedAspectClass = aspectClass ?? "aspect-[3/4]";
   const shellClass = plain ? "" : " rounded-2xl shadow-[0_8px_32px_rgba(23,30,69,0.15)] duration-300";
   const fallbackShellClass = plain ? "" : " rounded-2xl";
 
@@ -295,32 +295,38 @@ function StoryPageSpread({
   const isEvenPage = pageNumber % 2 === 0;
 
   return (
-    <article className="relative mb-14 md:mb-20">
-      <div className="relative grid items-stretch gap-6 md:grid-cols-[1.3fr_0.7fr] md:gap-0">
-        <div
-          className="pointer-events-none absolute bottom-0 left-1/2 top-0 hidden w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.95),rgba(230,212,190,0))] md:block"
-          aria-hidden="true"
-        />
-        <div className={isEvenPage ? "order-1 md:order-2" : "order-1"}>
-          <div className="h-full">
-            <PageImage
-              pageNumber={pageNumber}
-              state={state}
-              isInvalid={isInvalid}
-              invalidReason={invalidReason}
-              onRetry={onRetry}
-              plain
-            />
-          </div>
+    <article className="relative mb-10 md:mb-14 overflow-hidden rounded-2xl border border-[#E6D4BE] shadow-[0_4px_24px_rgba(23,30,69,0.07)]">
+      {/* Mobile: stacked. Desktop: side-by-side, both columns locked to aspect-[3/4] */}
+      <div className={`flex flex-col md:flex-row ${isEvenPage ? "md:flex-row-reverse" : ""}`}>
+
+        {/* Image column — always 3:4 */}
+        <div className="w-full md:w-1/2 flex-shrink-0">
+          <PageImage
+            pageNumber={pageNumber}
+            state={state}
+            isInvalid={isInvalid}
+            invalidReason={invalidReason}
+            onRetry={onRetry}
+            aspectClass="aspect-[3/4]"
+            plain
+          />
         </div>
 
-        <div className={isEvenPage ? "order-2 md:order-1" : "order-2"}>
-          <div className="flex h-full flex-col justify-center px-6 py-6 md:px-12 md:py-12">
-            <p className="max-w-[28ch] text-lg leading-8 text-[#2F3555] md:text-[1.55rem] md:leading-10">
+        {/* Text column — same 3:4 height on desktop, natural on mobile */}
+        <div className="w-full md:w-1/2 md:aspect-[3/4] flex items-center bg-[rgba(255,252,246,0.85)]
+                        border-t border-[#E6D4BE] md:border-t-0
+                        md:border-l md:border-[#E6D4BE]">
+          <div className="w-full h-full overflow-y-auto flex items-center">
+            <p className="px-7 py-8 md:px-10 text-base leading-8 text-[#2F3555] md:text-lg md:leading-9">
               {pageText}
             </p>
           </div>
         </div>
+
+      </div>
+      {/* Page number */}
+      <div className="absolute bottom-3 right-4 text-xs font-medium text-[#020202]/20 select-none">
+        {pageNumber}
       </div>
     </article>
   );
@@ -589,7 +595,6 @@ export default function StoryPreviewClient() {
       {/* ── Story shell ──────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top,#fff9ef_0%,#f8f3ea_44%,#f0e5d4_100%)]">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" aria-hidden="true" />
-        <div className="pointer-events-none absolute left-1/2 top-24 hidden h-[calc(100%-12rem)] w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.9),rgba(230,212,190,0))] xl:block" aria-hidden="true" />
 
         <header className="mx-auto max-w-5xl px-4 pb-8 pt-8 md:px-6 md:pb-12 md:pt-12">
           <div className="rounded-[2.25rem] border border-[#E6D4BE] bg-[rgba(255,252,246,0.88)] px-5 py-6 shadow-[0_20px_60px_rgba(83,57,33,0.12)] backdrop-blur-sm md:px-8 md:py-8">

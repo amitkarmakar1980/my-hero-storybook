@@ -10,6 +10,8 @@ export type StoryTheme =
 
 export type StoryTrait = "Brave" | "Curious" | "Funny" | "Kind";
 
+export type StoryLength = "short" | "standard" | "long";
+
 export interface StoryCharacterInput {
   name: string;
   age: number;
@@ -37,6 +39,7 @@ export interface StoryInput {
   characterPhotos?: CharacterPhotoInput[];
   ageBand?: AgeBand;
   theme: StoryTheme;
+  storyLength?: StoryLength;
   traits?: StoryTrait[];
   uploadedImageMimeType?: string;
   uploadedImageBase64?: string;
