@@ -51,8 +51,8 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
         </p>
       </div>
 
-      {/* Bottom row: theme tag */}
-      <div className="flex items-center pt-1">
+      {/* Bottom row: theme tag + sign-in badge */}
+      <div className="flex items-center justify-between pt-1">
         <span
           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
           style={{ backgroundColor: theme.tagBg, color: theme.tagText }}
@@ -60,6 +60,14 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
           <span aria-hidden="true">{theme.decorations[0]}</span>
           {theme.label}
         </span>
+        {theme.premium && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#171E45]/8 px-2.5 py-1 text-[10px] font-semibold text-[#171E45]/50">
+            <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clipRule="evenodd" />
+            </svg>
+            Sign in
+          </span>
+        )}
       </div>
     </article>
   );
