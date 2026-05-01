@@ -1231,70 +1231,80 @@ export default function CreateStoryForm() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" role="radiogroup" aria-label="Story theme" aria-required="true">
           {STORY_THEMES.filter((theme) => isSignedIn || !theme.premium).map((theme) => {
             const isSelected = storyData.selectedTheme === theme.label;
-            const isLocked = false;
             return (
               <button
                 key={theme.label}
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                onClick={() => {
-                  if (isLocked) { signIn("google"); return; }
-                  handleThemeSelect(theme.label as StoryTheme);
-                }}
+                onClick={() => handleThemeSelect(theme.label as StoryTheme)}
                 suppressHydrationWarning
-                className={`relative rounded-2xl p-5 flex flex-col gap-3 text-left
+                className={`relative overflow-hidden rounded-2xl flex flex-col text-left bg-white
                             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
-                            transition-all duration-200
-                            ${isLocked ? "opacity-75 cursor-pointer" : ""}
+                            transition-all duration-200 group
                             ${isSelected
-                              ? "border-2 scale-[1.03] shadow-[0_8px_28px_rgba(0,0,0,0.12)]"
-                              : "border-2 border-transparent hover:border-[#FFD5C0] hover:-translate-y-0.5 hover:shadow-md"
+                              ? "ring-2 scale-[1.03] shadow-[0_8px_28px_rgba(0,0,0,0.15)]"
+                              : "ring-1 ring-transparent hover:ring-[#FFD5C0] hover:-translate-y-0.5 hover:shadow-lg"
                             }`}
-                style={{
-                  backgroundColor: theme.bgColor,
-                  borderColor: isSelected ? theme.accentColor : undefined,
-                }}
+                style={{ ringColor: isSelected ? theme.accentColor : undefined } as React.CSSProperties}
               >
-                {/* Lock badge for premium themes */}
-                {isLocked && (
-                  <span
-                    className="absolute top-3 right-3 flex items-center gap-1 rounded-full px-2 py-0.5
-                               bg-[#171E45]/10 text-[#171E45]/60 text-[10px] font-semibold"
-                    aria-label="Sign in required"
-                  >
-                    <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                      <path fillRule="evenodd" d="M4 4.5V3a2 2 0 1 1 4 0v1.5h.5A1.5 1.5 0 0 1 10 6v4a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10V6A1.5 1.5 0 0 1 3.5 4.5H4Zm1.5-1.5a.5.5 0 0 1 1 0V4.5h-1V3Z" clipRule="evenodd"/>
-                    </svg>
-                    Sign in
+                {/* ── Immersive hero zone ── */}
+                <div className="relative overflow-hidden w-full" style={{ height: "10rem" }}>
+                  {/* Saturated gradient */}
+                  <div className="absolute inset-0" style={{
+                    background: `linear-gradient(145deg, ${theme.accentColor} 0%, ${theme.glowColor} 70%, ${theme.accentColor}dd 100%)`,
+                  }} />
+                  {/* Depth overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-black/40" />
+                  {/* Spotlight */}
+                  <div className="absolute inset-0" style={{
+                    background: `radial-gradient(ellipse 55% 55% at 50% 50%, rgba(255,255,255,0.2) 0%, transparent 100%)`,
+                  }} />
+                  {/* Far depth decoration */}
+                  <span aria-hidden="true" className="absolute -bottom-4 -right-4 text-[5rem] opacity-[0.1] select-none" style={{ lineHeight: 1 }}>
+                    {theme.decorations[2]}
                   </span>
-                )}
-
-                {/* Selected checkmark */}
-                {isSelected && !isLocked && (
-                  <span
-                    className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center
-                               justify-center text-white text-[10px] font-bold"
-                    style={{ backgroundColor: theme.accentColor }}
-                    aria-hidden="true"
-                  >
-                    ✓
+                  {/* Mid decoration */}
+                  <span aria-hidden="true" className="absolute top-2 left-3 text-xl opacity-50 select-none"
+                    style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }}>
+                    {theme.decorations[1]}
                   </span>
-                )}
+                  {/* Hero icon */}
+                  <div className="absolute inset-0 flex items-center justify-center pb-5">
+                    <span aria-hidden="true" className="text-[4rem] select-none group-hover:scale-110 transition-transform duration-300" style={{
+                      lineHeight: 1,
+                      filter: `drop-shadow(0 0 18px rgba(255,255,255,0.55)) drop-shadow(0 4px 12px rgba(0,0,0,0.5))`,
+                    }}>
+                      {theme.icon}
+                    </span>
+                  </div>
+                  {/* Bottom scrim + title */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/65 via-black/25 to-transparent px-3 pb-2 pt-6">
+                    <span className="text-white text-sm font-semibold leading-tight block"
+                      style={{ fontFamily: "var(--font-rowdies)", textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>
+                      {theme.label}
+                    </span>
+                  </div>
+                  {/* Selected checkmark */}
+                  {isSelected && (
+                    <span className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold shadow-md"
+                      style={{ backgroundColor: theme.accentColor }} aria-hidden="true">✓</span>
+                  )}
+                </div>
 
-                {/* Icon — larger */}
-                <span className="text-4xl" aria-hidden="true">{theme.icon}</span>
+                {/* ── Content zone ── */}
+                <div className="px-3 py-3 flex-1">
+                  <span className="text-xs text-[#171E45]/55 leading-relaxed">
+                    {theme.shortDescription}
+                  </span>
+                </div>
 
-                <span
-                  className="text-base font-semibold text-[#171E45] leading-tight"
-                  style={{ fontFamily: "var(--font-rowdies)" }}
-                >
-                  {theme.label}
-                </span>
-
-                <span className="text-xs text-[#171E45]/55 leading-relaxed">
-                  {theme.shortDescription}
-                </span>
+                {/* Accent bottom bar */}
+                <div className="h-0.5 w-full" style={{
+                  background: isSelected
+                    ? `linear-gradient(90deg, ${theme.accentColor}, ${theme.glowColor})`
+                    : "transparent",
+                }} />
               </button>
             );
           })}
