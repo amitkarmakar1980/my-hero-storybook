@@ -14,29 +14,30 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
       {/* ── Immersive hero zone ── */}
       <div className="relative overflow-hidden w-full" style={{ height: "15rem" }}>
 
-        {/* Rich saturated base gradient */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0"
-          style={{
-            background: `linear-gradient(145deg, ${theme.accentColor} 0%, ${theme.glowColor} 70%, ${theme.accentColor}dd 100%)`,
-          }}
-        />
+        {/* Background image or gradient fallback */}
+        {theme.backgroundImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={theme.backgroundImageUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{ background: `linear-gradient(145deg, ${theme.accentColor} 0%, ${theme.glowColor} 100%)` }}
+          />
+        )}
 
-        {/* Depth overlay — darkens top, lighter bottom */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/10 to-black/40"
-        />
+        {/* Dark scrim for contrast */}
+        <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/55" />
 
-        {/* Radial spotlight behind hero icon */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0"
-          style={{
-            background: `radial-gradient(ellipse 55% 55% at 50% 52%, rgba(255,255,255,0.22) 0%, transparent 100%)`,
-          }}
-        />
+        {/* Radial spotlight */}
+        <div aria-hidden="true" className="absolute inset-0" style={{
+          background: `radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255,255,255,0.15) 0%, transparent 100%)`,
+        }} />
 
         {/* Far-depth decoration — very large, very faded, bottom-right */}
         <span

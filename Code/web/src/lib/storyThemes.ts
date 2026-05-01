@@ -15,6 +15,7 @@ export interface StoryThemeConfig {
   glowColor: string;
   decorations: [string, string, string];
   premium?: boolean;
+  backgroundImageUrl?: string;
 }
 
 export const STORY_THEMES: StoryThemeConfig[] = [
@@ -31,6 +32,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     tagText: "#6B1FC0",
     glowColor: "#973FEA",
     decorations: ["⭐", "🌙", "🪐"],
+    backgroundImageUrl: "https://images.unsplash.com/photo-1464802686167-b939a6910659?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Jungle Adventure",
@@ -45,6 +47,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     tagText: "#4A6810",
     glowColor: "#88B520",
     decorations: ["🌿", "🐒", "🌺"],
+    backgroundImageUrl: "https://images.unsplash.com/photo-1511936606692-5e0d73f6b638?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Magic School",
@@ -59,6 +62,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     tagText: "#B02A62",
     glowColor: "#F96EA0",
     decorations: ["✨", "🌟", "🦋"],
+    backgroundImageUrl: "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Underwater Kingdom",
@@ -74,6 +78,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#0EA5E9",
     decorations: ["🌊", "🐚", "🪸"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Dinosaur World",
@@ -89,6 +94,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#65A30D",
     decorations: ["🌿", "🥚", "🌋"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1558613468-da6379080163?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Fairy Tale Castle",
@@ -104,6 +110,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#7C3AED",
     decorations: ["👑", "⚔️", "🌹"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Pirate Seas",
@@ -119,6 +126,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#EA6C00",
     decorations: ["⚓", "🗺️", "💎"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1515593761628-37c272a009f9?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Arctic Quest",
@@ -134,6 +142,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#3B82F6",
     decorations: ["❄️", "🌌", "🐻‍❄️"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Superhero City",
@@ -149,6 +158,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#EF4444",
     decorations: ["🦸", "🌆", "💥"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1446062061624-594b6e3403d7?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Enchanted Garden",
@@ -164,6 +174,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#EC4899",
     decorations: ["🌺", "🧚", "🍄"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1490750967868-88df5691cc36?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Robot Workshop",
@@ -179,6 +190,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#6366F1",
     decorations: ["⚙️", "💡", "🔧"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Cloud Kingdom",
@@ -194,6 +206,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#0891B2",
     decorations: ["🌤️", "🌈", "🐳"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Dragon Rider",
@@ -209,6 +222,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#F97316",
     decorations: ["🔥", "🏔️", "🥚"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Lost Civilization",
@@ -224,6 +238,7 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#B45309",
     decorations: ["🏛️", "🔍", "💎"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1518638150340-f706e86654de?w=600&h=400&fit=crop&q=80&auto=format",
   },
   {
     label: "Candy Kingdom",
@@ -239,5 +254,6 @@ export const STORY_THEMES: StoryThemeConfig[] = [
     glowColor: "#DB2777",
     decorations: ["🍫", "🍬", "🌈"],
     premium: true,
+    backgroundImageUrl: "https://images.unsplash.com/photo-1499195333224-3ce974eecb47?w=600&h=400&fit=crop&q=80&auto=format",
   },
 ];
