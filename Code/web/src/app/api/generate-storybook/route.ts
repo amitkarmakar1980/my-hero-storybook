@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
+import { isAdminEmail } from "@/lib/config";
 import {
   buildCharacterProfilePrompt,
   buildCoverImagePromptFromContext,
@@ -121,6 +123,13 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     const body = (await request.json()) as StoryInput;
+    const isAdmin = isAdminEmail(session?.user?.email);
+    const illustrationStyle = isAdmin
+      ? body.illustrationStyle ?? DEFAULT_ILLUSTRATION_STYLE
+      : DEFAULT_ILLUSTRATION_STYLE;
+    const pageCount = isAdmin && typeof body.pageCount === "number" && body.pageCount >= 1 && body.pageCount <= 20
+      ? body.pageCount
+      : 6;
     const characterNamesFromCharacters = body.characters?.map((character) => character.name.trim()).filter(Boolean) ?? [];
     const characterNames = characterNamesFromCharacters.length > 0
       ? characterNamesFromCharacters
@@ -209,6 +218,8 @@ export async function POST(request: NextRequest) {
       characters: normalizedCharacters,
       characterPhotos: normalizedCharacterPhotos,
       traits: normalizedCharacters[0]?.traits ?? [],
+      illustrationStyle,
+      pageCount,
     };
 
     const characterProfiles = await Promise.all(
@@ -246,14 +257,16 @@ export async function POST(request: NextRequest) {
       characterNames: normalizedCharacterNames,
       characterProfiles,
       characterPhotos: normalizedCharacterPhotos,
-      sharedContextPrompt: buildSharedImageGenerationContext(characterProfiles),
+      sharedContextPrompt: buildSharedImageGenerationContext(characterProfiles, illustrationStyle),
+      illustrationStyle,
     };
 
     const coverImagePrompt: CoverImagePrompt = {
       prompt: buildCoverImagePromptFromContext(
         imageGenerationContext.sharedContextPrompt,
         refinedStory.title,
-        normalizedCharacterNames
+        normalizedCharacterNames,
+        illustrationStyle
       ),
     };
 
@@ -262,6 +275,7 @@ export async function POST(request: NextRequest) {
       characterNames: normalizedInput.characterNames,
       characters: normalizedInput.characters,
       characterPhotos: normalizedInput.characterPhotos,
+      illustrationStyle,
       characterProfiles,
       imageGenerationContext,
       characterProfile: characterProfiles[0],

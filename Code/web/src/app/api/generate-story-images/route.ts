@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
 import {
   buildFinalImagePrompt,
   buildFinalImagePromptFromContext,
@@ -15,6 +16,7 @@ import type {
   CharacterProfile,
   CharacterPhotoInput,
   GeneratedStory,
+  IllustrationStyle,
   PageImagePrompt,
   CoverImagePrompt,
   GeneratedStoryImage,
@@ -30,6 +32,7 @@ interface GenerateStoryImagesRequest {
   characterProfiles?: CharacterProfile[];
   characterProfile?: CharacterProfile;
   characterPhotos?: CharacterPhotoInput[];
+  illustrationStyle?: IllustrationStyle;
   story?: GeneratedStory;
   imagePrompts?: PageImagePrompt[];
   coverImagePrompt?: CoverImagePrompt;
@@ -303,14 +306,15 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as GenerateStoryImagesRequest;
     const { story, imagePrompts, coverImagePrompt, characterPhotos } = body;
     const imageGenerationContext = body.imageGenerationContext;
+    const illustrationStyle = imageGenerationContext?.illustrationStyle ?? body.illustrationStyle ?? DEFAULT_ILLUSTRATION_STYLE;
     const characterProfiles = imageGenerationContext?.characterProfiles ?? body.characterProfiles ?? (body.characterProfile ? [body.characterProfile] : undefined);
     const resolvedCharacterPhotos = imageGenerationContext?.characterPhotos ?? characterPhotos;
     const useImagen = isImagenModel(GEMINI_IMAGE_MODEL);
     const imagenSharedContext = useImagen && characterProfiles
-      ? buildImagenSharedContext(characterProfiles)
+      ? buildImagenSharedContext(characterProfiles, illustrationStyle)
       : undefined;
     const geminiSharedContext = !useImagen
-      ? (imageGenerationContext?.sharedContextPrompt || (characterProfiles ? buildSharedImageGenerationContext(characterProfiles) : undefined))
+      ? (imageGenerationContext?.sharedContextPrompt || (characterProfiles ? buildSharedImageGenerationContext(characterProfiles, illustrationStyle) : undefined))
       : undefined;
 
     // Cover image request
@@ -356,8 +360,8 @@ export async function POST(request: NextRequest) {
       const prompt = useImagen && imagenSharedContext
         ? buildImagenPagePrompt(imagenSharedContext, storyPage)
         : geminiSharedContext
-          ? buildFinalImagePromptFromContext(geminiSharedContext, storyPage, { reinforceConsistency: ip.pageNumber > 1 })
-          : buildFinalImagePrompt(characterProfiles, storyPage, { reinforceConsistency: ip.pageNumber > 1 });
+          ? buildFinalImagePromptFromContext(geminiSharedContext, storyPage, { reinforceConsistency: ip.pageNumber > 1, illustrationStyle })
+          : buildFinalImagePrompt(characterProfiles, storyPage, { reinforceConsistency: ip.pageNumber > 1, illustrationStyle });
 
       let image: GeneratedStoryImage;
       try {

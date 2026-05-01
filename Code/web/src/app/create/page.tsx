@@ -1,6 +1,11 @@
+import { auth } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/config";
 import CreateStoryForm from "./CreateStoryForm";
 
-export default function CreateStoryPage() {
+export default async function CreateStoryPage() {
+  const session = await auth();
+  const isAdmin = isAdminEmail(session?.user?.email);
+
   return (
     <main className="min-h-screen bg-[#FCF7EE]">
 
@@ -41,7 +46,7 @@ export default function CreateStoryPage() {
         {/* Form — wider on desktop */}
         <div className="mx-auto max-w-5xl px-4 py-8 md:py-10 pb-20">
           <div className="bg-white rounded-3xl border border-[#FFD5C0] shadow-[0_4px_40px_rgba(0,0,0,0.05)] p-6 md:p-12">
-            <CreateStoryForm />
+            <CreateStoryForm isAdmin={isAdmin} />
           </div>
         </div>
 

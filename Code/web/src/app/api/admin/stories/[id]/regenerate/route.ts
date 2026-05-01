@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isAdminEmail, getImageModel } from "@/lib/config";
+import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
 import { uploadBase64Image, createSupabaseServerClient } from "@/lib/supabase-server";
 import {
   buildCharacterProfilePrompt,
@@ -125,6 +126,7 @@ export async function POST(
   if (!story) return NextResponse.json({ error: "Story not found" }, { status: 404 });
 
   const storyData = story.storyJson as unknown as StoredStoryData;
+  const illustrationStyle = storyData.illustrationStyle ?? DEFAULT_ILLUSTRATION_STYLE;
   const characterPhotos = storyData.characterPhotos ?? [];
   const model = await getImageModel();
   const timestamp = Date.now();
@@ -160,8 +162,8 @@ export async function POST(
 
   // Step 2: Build shared context based on model type
   const sharedContext = isImagenModel(model)
-    ? buildImagenSharedContext(characterProfiles)
-    : buildSharedImageGenerationContext(characterProfiles);
+    ? buildImagenSharedContext(characterProfiles, illustrationStyle)
+    : buildSharedImageGenerationContext(characterProfiles, illustrationStyle);
 
   // Step 3: Regenerate all page images
   const pageImagesJson: Record<number, { imageUrl: string }> = {};
@@ -195,7 +197,7 @@ export async function POST(
     const characterNames = characterProfiles.map(p => p.characterName);
     const coverPrompt = isImagenModel(model)
       ? buildImagenCoverPrompt(sharedContext, storyData.title, characterNames)
-      : buildCoverImagePromptFromContext(sharedContext, storyData.title, characterNames);
+      : buildCoverImagePromptFromContext(sharedContext, storyData.title, characterNames, illustrationStyle);
 
     const coverImage = await generateImage(model, coverPrompt, "16:9");
     const coverDataUrl = `data:${coverImage.mimeType};base64,${coverImage.data}`;

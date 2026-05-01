@@ -1,5 +1,6 @@
 // Prompts for story generation
-import type { StoryInput, CharacterProfile, StoryPage, StoryCharacterInput, StoryLength } from "@/types/storybook";
+import { getIllustrationStyleDirective, getIllustrationStyleOption } from "@/lib/illustrationStyles";
+import type { IllustrationStyle, StoryInput, CharacterProfile, StoryPage, StoryCharacterInput, StoryLength } from "@/types/storybook";
 
 function normalizeProfiles(profileOrProfiles: CharacterProfile | CharacterProfile[]): CharacterProfile[] {
   return Array.isArray(profileOrProfiles) ? profileOrProfiles : [profileOrProfiles];
@@ -90,8 +91,8 @@ export const IMAGE_PIPELINE_MODE: "baseline" | "advanced" = "advanced";
  * Short global style instruction. Tells the model what kind of art to make.
  * Kept tight so it doesn't compete with the scene prompt.
  */
-export function buildBaseStylePrompt(): string {
-  return `Premium children's picture book illustration. Full-color digital painting with warm, soft lighting. Expressive, child-friendly character design. Rich environmental storytelling. Single coherent illustrated scene. Published storybook quality — warm, magical, and visually engaging. Stylized illustration is allowed, but the child's facial identity must stay unmistakably faithful to the uploaded photo reference, including hairline, hair density, and whether the head is bald, thinning, or full-haired.`;
+export function buildBaseStylePrompt(illustrationStyle?: IllustrationStyle): string {
+  return `Premium children's picture book illustration. ${getIllustrationStyleDirective(illustrationStyle)} Full-color rendering with warm, soft lighting. Expressive, child-friendly character design. Rich environmental storytelling. Single coherent illustrated scene. Published storybook quality — warm, magical, and visually engaging. Stylized illustration is allowed, but the child's facial identity must stay unmistakably faithful to the uploaded photo reference, including hairline, hair density, and whether the head is bald, thinning, or full-haired.`;
 }
 
 export function buildImageDimensionLock(): string {
@@ -179,23 +180,24 @@ export function buildSimplePromptSelfCheck(): string {
 export function buildFinalImagePrompt(
   profile: CharacterProfile | CharacterProfile[],
   page: StoryPage,
-  options?: { reinforceConsistency?: boolean }
+  options?: { reinforceConsistency?: boolean; illustrationStyle?: IllustrationStyle }
 ): string {
   return buildFinalImagePromptFromContext(
-    buildSharedImageGenerationContext(profile),
+    buildSharedImageGenerationContext(profile, options?.illustrationStyle),
     page,
     options
   );
 }
 
 export function buildSharedImageGenerationContext(
-  profile: CharacterProfile | CharacterProfile[]
+  profile: CharacterProfile | CharacterProfile[],
+  illustrationStyle?: IllustrationStyle
 ): string {
   if (IMAGE_PIPELINE_MODE === "advanced") {
-    return [GLOBAL_STYLE_PREFIX, "", _buildCharacterAnchorAdvanced(profile)].join("\n");
+    return [buildAdvancedGlobalStylePrefix(illustrationStyle), "", _buildCharacterAnchorAdvanced(profile)].join("\n");
   }
 
-  return [buildBaseStylePrompt(), "", buildCharacterAnchor(profile)].join("\n");
+  return [buildBaseStylePrompt(illustrationStyle), "", buildCharacterAnchor(profile)].join("\n");
 }
 
 export function buildImagenCharacterDescription(profile: CharacterProfile): string {
@@ -215,11 +217,14 @@ export function buildImagenCharacterDescription(profile: CharacterProfile): stri
   return `${profile.characterName}: ${appearance}, wearing ${outfit}.`;
 }
 
-export function buildImagenSharedContext(profile: CharacterProfile | CharacterProfile[]): string {
+export function buildImagenSharedContext(
+  profile: CharacterProfile | CharacterProfile[],
+  illustrationStyle?: IllustrationStyle
+): string {
   const profiles = normalizeProfiles(profile);
   const characterLines = profiles.map(buildImagenCharacterDescription).join(" ");
 
-  return `Children's picture book illustration. Full-color painting, warm soft lighting, whimsical and magical feel, rich detail, published storybook quality. No text, no words, no letters, no signs, no labels anywhere. Not a sketch or line art. Not monochrome.
+  return `Children's picture book illustration. ${getIllustrationStyleDirective(illustrationStyle)} Warm soft lighting, whimsical and magical feel, rich detail, published storybook quality. No text, no words, no letters, no signs, no labels anywhere. Not a sketch or line art. Not monochrome.
 
 Character: ${characterLines}`;
 }
@@ -240,7 +245,7 @@ export function buildImagenCoverPrompt(sharedContext: string, storyTitle: string
 export function buildFinalImagePromptFromContext(
   sharedContextPrompt: string,
   page: StoryPage,
-  options?: { reinforceConsistency?: boolean }
+  options?: { reinforceConsistency?: boolean; illustrationStyle?: IllustrationStyle }
 ): string {
   if (IMAGE_PIPELINE_MODE === "advanced") {
     return _buildAdvancedImagePromptFromContext(sharedContextPrompt, page, options);
@@ -264,10 +269,11 @@ export function buildFinalImagePromptFromContext(
  */
 export function buildCoverImagePrompt(
   profile: CharacterProfile | CharacterProfile[],
-  storyTitle: string
+  storyTitle: string,
+  illustrationStyle?: IllustrationStyle
 ): string {
   return buildCoverImagePromptFromContext(
-    buildSharedImageGenerationContext(profile),
+    buildSharedImageGenerationContext(profile, illustrationStyle),
     storyTitle,
     normalizeProfiles(profile).map((character) => character.characterName)
   );
@@ -277,10 +283,12 @@ export function buildCoverImagePrompt(
 export function buildCoverImagePromptFromContext(
   sharedContextPrompt: string,
   storyTitle: string,
-  characterNames: string[]
+  characterNames: string[],
+  illustrationStyle?: IllustrationStyle
 ): string {
   const mainCharacter = characterNames[0] ?? "the main character";
   const supportingCharacters = characterNames.slice(1);
+  const styleDirective = getIllustrationStyleDirective(illustrationStyle);
 
   return [
     sharedContextPrompt,
@@ -292,6 +300,8 @@ export function buildCoverImagePromptFromContext(
     buildShortNegatives(),
     "",
     buildSimplePromptSelfCheck(),
+    "",
+    `FINALIZE: Generate as ${getIllustrationStyleOption(illustrationStyle).label}: ${styleDirective}`,
   ].join("\n");
 }
 
@@ -306,7 +316,7 @@ VISUAL STYLE DIRECTIVE — Critical, locked, unchanging across all pages:
 
 This is a PREMIUM CHILDREN'S PICTURE BOOK ILLUSTRATION.
 Art direction: warm, whimsical, editorially polished storybook scene.
-Rendering: full-color digital painting style inspired by soft watercolor and gouache.
+Rendering: fully finished, premium storybook illustration in the specifically requested illustration style.
 Character design: rounded, friendly, expressive child-friendly faces.
 Composition: complete environment storytelling, not isolated portraits.
 Quality: published children's book illustration; editorial storybook standard.
@@ -316,10 +326,10 @@ Photo fidelity: the uploaded child photo is the canonical identity reference for
 Interior page format: every interior illustration in this book uses the exact same portrait 4:5 page dimensions and framing system.
 
 Visual anti-failures (explicit prohibitions):
-• NOT sketch-like, line-art-only, or technical drawing
-• NOT manga, anime, or comic-book style illustration
+• NOT unfinished rough sketch, bare technical drawing, or accidental low-detail draft
+• NOT manga or anime style unless that exact style was explicitly requested
 • NOT storyboard, concept art sheet, or multiple-pose grid
-• NOT character sheet, pose turnaround, or repeated-clone collage
+• NOT character sheet, pose turnaround, repeated-clone composition, or multi-panel collage
 • NOT monochrome, black-and-white, or limited-palette drawing
 • NOT photorealistic, 3D-rendered, or photograph
 • NOT UI mockup, app screen, or digital interface
@@ -327,6 +337,10 @@ Visual anti-failures (explicit prohibitions):
 • NOT avatar-style isolated head; must be integrated into scene
 • NOT generic stock children's art; must be premium storybook quality
 `.trim();
+
+function buildAdvancedGlobalStylePrefix(illustrationStyle?: IllustrationStyle): string {
+  return `${GLOBAL_STYLE_PREFIX}\nMANDATORY STYLE OVERRIDE — this selected style outranks any generic storybook default:\n${getIllustrationStyleDirective(illustrationStyle)}`;
+}
 
 export function buildNegativeConstraints(): string {
   return `
@@ -337,10 +351,10 @@ Content restrictions (will reject image if present):
 ✗ Any typographic content: handwriting, signs, posters, banners, logos, titles, page numbers
 ✗ Any printed or written marks: watermarks, copyright text, subtitles
 ✗ Black-and-white or monochrome rendering
-✗ Sketch, line-art-only, or technical drawing appearance
-✗ Collage, character sheet, pose grid, or multiple-clone composition
+✗ Unfinished rough sketch, bare line-art-only draft, or technical drawing appearance when that look was not explicitly requested by the chosen illustration style
+✗ Character sheet, pose grid, repeated-clone composition, or multi-panel collage layout
 ✗ Photorealistic or 3D-render look
-✗ Manga, anime, or storyboard style
+✗ Manga, anime, or storyboard style unless explicitly requested
 ✗ Avatar portrait on blank background (must be scene-integrated)
 ✗ Deformed anatomy: missing/extra fingers, incorrect proportions, disconnected limbs
 ✗ Off-model child (inconsistent with character profile from prior pages)
@@ -361,8 +375,8 @@ MANDATORY PROMPT SELF-CHECK — Before generating image, verify:
 ✓ Condition 2: Same face shape, hairstyle, skin tone, age appearance, body proportions?
 ✓ Condition 3: ONE coherent story scene with clear setting?
 ✓ Condition 4: NO instruction to render text, letters, numbers, or typographic content?
-✓ Condition 5: Matches global style (premium full-color storybook illustration)?
-✓ Condition 6: Free of requests for sketch, monochrome, line-art, or avatar-portrait?
+✓ Condition 5: Matches the specifically selected illustration style, not just a generic storybook look?
+✓ Condition 6: Fully rendered and polished in the requested style, not an accidental unfinished sketch, avatar portrait, or low-detail draft?
 ✓ Condition 7: Environment and storytelling integration (not isolated floating portrait)?
 ✓ Condition 8: Uses the required locked aspect ratio for this illustration type?
 
@@ -408,8 +422,10 @@ MANDATORY CONSISTENCY RULES:
 function _buildAdvancedImagePromptFromContext(
   sharedContextPrompt: string,
   page: StoryPage,
-  options?: { reinforceConsistency?: boolean }
+  options?: { reinforceConsistency?: boolean; illustrationStyle?: IllustrationStyle }
 ): string {
+  const styleDirective = getIllustrationStyleDirective(options?.illustrationStyle);
+
   const pageContext = options?.reinforceConsistency
     ? `CONSISTENCY REINFORCEMENT (Pages 2–6):\nYou are illustrating page ${page.pageNumber}. Match the visual style and character identity from page 1 exactly. No reinterpretation, no style drift, no character redesign.`
     : `PAGE 1 — VISUAL LANGUAGE ESTABLISHMENT:\nThis is the first page. Your illustration style, character treatment, and rendering approach will define the ENTIRE visual identity for all remaining pages.`;
@@ -434,7 +450,7 @@ ${buildNegativeConstraints()}
 
 ${buildPromptSelfCheckBlock()}
 
-FINALIZE: Generate one coherent, premium children's storybook illustration matching all conditions above.
+FINALIZE: Generate as ${getIllustrationStyleOption(options?.illustrationStyle).label}: ${styleDirective}
 `.trim();
 }
 
@@ -447,9 +463,9 @@ export function buildRetryReinforcement(
 
   const reinforcements: Record<string, string> = {
     monochrome_or_black_and_white: `RETRY — FULL COLOR REQUIREMENT:\nThe previous image was monochrome. MUST be FULL COLOR with rich, saturated palette. Warm, vibrant, colorful painting style only.`,
-    line_art_or_sketch: `RETRY — NO SKETCH, NO LINE ART:\nThe previous attempt was line-art or sketch-style. MUST be full PAINTED illustration. Soft, blended brushwork. No visible outlines.`,
+    line_art_or_sketch: `RETRY — FULLY RENDERED IN THE REQUESTED STYLE:\nThe previous attempt looked unfinished. Keep the chosen illustration style, but make it feel complete, polished, intentional, and premium. Do not fall back to a rough draft, accidental outline-only render, or low-detail sketch.`,
     isolated_face_or_avatar: `RETRY — FULL ENVIRONMENTAL SCENE:\nThe previous image showed only an isolated face. MUST be a complete ENVIRONMENTAL SCENE. Show the character interacting with the world.`,
-    collage_or_character_sheet: `RETRY — SINGLE COHERENT SCENE:\nThe previous attempt was a collage or character sheet. MUST be ONE SINGLE COHERENT SCENE. One child, one pose, one moment.`,
+    collage_or_character_sheet: `RETRY — SINGLE COHERENT SCENE:\nThe previous attempt read like a layout sheet or collage. MUST be ONE SINGLE COHERENT SCENE. One story moment, one composition, one environment.`,
     text_artifact: `RETRY — ABSOLUTELY NO TEXT:\nThe previous image contained text or labels. ABSOLUTELY NO TEXT of any kind. Pure visual storytelling only.`,
     inconsistent_character: `RETRY — CONSISTENT CHARACTER IDENTITY:\nThe child's appearance was inconsistent. SAME face, hairstyle, body proportions, skin tone, and age as page 1.`,
     low_information_scene: `RETRY — RICH STORY SCENE:\nThe previous scene had insufficient detail. RICH, detailed environment. Multiple layers of visual storytelling.`,
@@ -537,7 +553,7 @@ export function buildStoryGenerationPrompt(
   return `
 You are an expert children's story writer.
 
-Write a personalized 6-page storybook.
+Write a personalized ${input.pageCount ?? 6}-page storybook.
 
 Inputs:
 - Character names: ${characterList}
@@ -552,7 +568,7 @@ ${profiles.map((characterProfile) => `  - ${characterProfile.characterName}: ${c
 Requirements:
 - ${characterNames.length > 1 ? `All of these characters are part of the main cast: ${characterList}` : `The child hero is ${primaryCharacter}`}
 - Every named character must appear in the story and be meaningfully included in the plot
-- Do not omit any named character from the 6-page story
+- Do not omit any named character from the ${input.pageCount ?? 6}-page story
 - The way each character behaves, speaks, and is described must fit their exact age
 - Story moments should feel plausible for these exact ages while still being magical and adventurous
 - NEVER mention any character's age explicitly in the story text — no phrases like "5-year-old", "aged 7", "who was 6", etc. Age is used only to calibrate behaviour and vocabulary, not to be stated in the narrative
@@ -567,12 +583,7 @@ Return strict JSON:
   "title": "...",
   "coverText": "...",
   "pages": [
-    { "pageNumber": 1, "text": "..." },
-    { "pageNumber": 2, "text": "..." },
-    { "pageNumber": 3, "text": "..." },
-    { "pageNumber": 4, "text": "..." },
-    { "pageNumber": 5, "text": "..." },
-    { "pageNumber": 6, "text": "..." }
+${Array.from({ length: input.pageCount ?? 6 }, (_, i) => `    { "pageNumber": ${i + 1}, "text": "..." }`).join(",\n")}
   ],
   "ending": "..."
 }
@@ -604,15 +615,23 @@ Remove any explicit age references — do not include phrases like "5-year-old",
 
 Keep:
 - same title
-- same 6-page structure
+- EXACTLY ${input.pageCount ?? 6} pages — do not add or remove any pages
 - same general plot
 - every named character included in the story
 - each named character behaving like their exact entered age
 - ${buildStoryLengthRequirements(input).replace(/\n/g, "\n- ")}
 
-Return strict JSON in the same structure.
+Return strict JSON with EXACTLY ${input.pageCount ?? 6} pages:
+{
+  "title": "...",
+  "coverText": "...",
+  "pages": [
+${Array.from({ length: input.pageCount ?? 6 }, (_, i) => `    { "pageNumber": ${i + 1}, "text": "..." }`).join(",\n")}
+  ],
+  "ending": "..."
+}
 
-Story:
+Story to refine:
 ${storyJson}
 `.trim();
 }

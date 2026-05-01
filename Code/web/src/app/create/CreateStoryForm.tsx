@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
+import { DEFAULT_ILLUSTRATION_STYLE, ILLUSTRATION_STYLE_OPTIONS } from "@/lib/illustrationStyles";
 import { STORY_THEMES } from "@/lib/storyThemes";
-import type { StoryTheme, StoryTrait, StoryLength } from "@/types/storybook";
+import type { IllustrationStyle, StoryTheme, StoryTrait, StoryLength } from "@/types/storybook";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -212,6 +213,8 @@ interface StoryCreationData {
   }>;
   selectedTheme: StoryTheme | "";
   storyLength: StoryLength;
+  pageCount: number;
+  illustrationStyle: IllustrationStyle;
 }
 
 interface RequiredFieldErrors {
@@ -326,7 +329,291 @@ function createEmptyCharacterDraft() {
 
 // ── Main form ────────────────────────────────────────────────────────────────
 
-export default function CreateStoryForm() {
+function buildSharedStyleScene(preview: (typeof ILLUSTRATION_STYLE_OPTIONS)[number]["preview"]) {
+  return `
+    <rect width="240" height="160" rx="22" fill="#e7ddd0" opacity="0.8" />
+    <g opacity="0.42">
+      <rect x="124" y="12" width="4" height="116" rx="2" fill="#6a5f55" />
+      <rect x="136" y="8" width="4" height="126" rx="2" fill="#6a5f55" />
+      <rect x="148" y="11" width="4" height="122" rx="2" fill="#6a5f55" />
+      <rect x="160" y="8" width="4" height="126" rx="2" fill="#6a5f55" />
+      <rect x="172" y="10" width="4" height="121" rx="2" fill="#6a5f55" />
+      <rect x="184" y="8" width="4" height="126" rx="2" fill="#6a5f55" />
+    </g>
+    <g opacity="0.82">
+      <path d="M14 58 C18 24, 45 12, 71 22 C57 31, 47 44, 42 60 C31 61, 22 60, 14 58 Z" fill="${preview.ground}" />
+      <path d="M24 78 C27 48, 55 35, 81 44 C69 53, 61 66, 58 81 C46 82, 34 81, 24 78 Z" fill="${preview.texture}" />
+      <path d="M28 29 C48 4, 84 3, 101 23 C84 28, 72 39, 67 52 C52 52, 38 45, 28 29 Z" fill="${preview.accent}" opacity="0.5" />
+    </g>
+    <ellipse cx="102" cy="83" rx="58" ry="63" fill="#d8c8ba" opacity="0.24" />
+    <path d="M66 34 C85 15, 122 12, 145 27 C164 39, 171 61, 169 91 C166 122, 146 143, 108 144 C77 144, 54 126, 49 97 C45 72, 51 49, 66 34 Z" fill="#262024" />
+    <path d="M67 37 C77 23, 101 15, 124 18 C108 28, 95 42, 88 59 C80 70, 72 74, 60 74 C59 60, 61 48, 67 37 Z" fill="#362c32" opacity="0.72" />
+    <path d="M72 49 C87 31, 122 29, 138 46 C151 60, 150 92, 137 110 C125 126, 95 129, 80 115 C65 101, 61 66, 72 49 Z" fill="#cd9369" />
+    <path d="M88 42 C100 34, 124 34, 136 43 C127 43, 119 48, 113 57 C103 56, 95 50, 88 42 Z" fill="#f0d2ba" opacity="0.34" />
+    <path d="M78 70 C83 63, 93 61, 102 65" stroke="#3d2d2d" stroke-width="3" stroke-linecap="round" fill="none" />
+    <path d="M109 67 C118 61, 130 61, 138 67" stroke="#3d2d2d" stroke-width="3" stroke-linecap="round" fill="none" />
+    <ellipse cx="91" cy="76" rx="7" ry="5" fill="#20161a" />
+    <ellipse cx="123" cy="76" rx="7" ry="5" fill="#20161a" />
+    <circle cx="89" cy="74" r="1.6" fill="#ffffff" opacity="0.7" />
+    <circle cx="121" cy="74" r="1.6" fill="#ffffff" opacity="0.7" />
+    <path d="M101 88 C104 92, 110 92, 114 88" stroke="#8b5c47" stroke-width="2.3" stroke-linecap="round" fill="none" />
+    <path d="M82 96 C92 107, 113 109, 129 98" stroke="#8c473b" stroke-width="4.4" stroke-linecap="round" fill="none" />
+    <path d="M80 100 C90 110, 112 112, 130 101" stroke="#f7ece9" stroke-width="2.1" stroke-linecap="round" fill="none" opacity="0.82" />
+    <path d="M42 131 C61 117, 82 111, 104 112 C123 113, 140 121, 151 136 L151 160 L42 160 Z" fill="#f3b2bf" />
+    <path d="M145 98 C152 79, 172 71, 191 79 C208 87, 216 108, 216 131 C200 127, 189 126, 176 128 C162 120, 151 112, 145 98 Z" fill="#c99674" opacity="0.92" />
+    <path d="M158 90 C166 80, 179 75, 191 77 C182 83, 176 92, 174 102 C167 101, 161 97, 158 90 Z" fill="#2f2629" />
+    <ellipse cx="184" cy="101" rx="5.7" ry="4.2" fill="#241a1d" />
+    <path d="M176 111 C181 114, 187 114, 191 111" stroke="#8c473b" stroke-width="2" stroke-linecap="round" fill="none" />
+    <path d="M46 148 C84 139, 123 139, 162 149" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.16" fill="none" />
+  `;
+}
+
+function buildWatercolorScene(preview: (typeof ILLUSTRATION_STYLE_OPTIONS)[number]["preview"]) {
+  return `
+    <g filter="url(#watercolorWash)" opacity="0.95">
+      <rect width="240" height="160" rx="22" fill="#fffdf9" opacity="0.88" />
+      <path d="M18 63 C22 29, 46 17, 70 23 C58 35, 50 47, 46 61 C36 63, 26 64, 18 63 Z" fill="#b8d7a6" opacity="0.62" />
+      <path d="M28 82 C30 55, 56 40, 79 47 C69 56, 62 66, 60 79 C49 82, 39 83, 28 82 Z" fill="#a8c6e6" opacity="0.5" />
+      <path d="M68 36 C86 18, 122 15, 145 28 C164 40, 170 60, 168 91 C165 121, 146 142, 108 143 C78 143, 56 126, 50 98 C45 71, 52 49, 68 36 Z" fill="#5a4d58" opacity="0.5" />
+      <path d="M72 50 C87 32, 121 30, 138 47 C150 61, 149 92, 136 110 C124 126, 96 129, 80 114 C65 101, 61 67, 72 50 Z" fill="#efc3a8" opacity="0.72" />
+      <path d="M44 132 C62 118, 84 112, 104 112 C123 113, 140 121, 151 136 L151 160 L44 160 Z" fill="#f7c4d8" opacity="0.6" />
+      <path d="M145 98 C152 79, 172 71, 191 79 C208 87, 216 108, 216 131 C200 127, 189 126, 176 128 C162 120, 151 112, 145 98 Z" fill="#dbb293" opacity="0.56" />
+    </g>
+    <g filter="url(#watercolorPigment)" opacity="0.9">
+      <ellipse cx="102" cy="82" rx="61" ry="66" fill="#dfcabb" opacity="0.06" />
+      <ellipse cx="92" cy="76" rx="7" ry="4.2" fill="#2f2530" opacity="0.5" />
+      <ellipse cx="123" cy="76" rx="7" ry="4.2" fill="#2f2530" opacity="0.5" />
+      <path d="M82 97 C92 106, 111 108, 127 99" stroke="#9a5b4d" stroke-width="2.8" stroke-linecap="round" fill="none" opacity="0.28" />
+      <path d="M158 90 C166 80, 178 75, 191 77 C182 84, 176 92, 174 102 C167 101, 161 97, 158 90 Z" fill="#4e434d" opacity="0.42" />
+      <ellipse cx="184" cy="101" rx="5.2" ry="3.8" fill="#2f2530" opacity="0.48" />
+    </g>
+    <g filter="url(#watercolorWash)" opacity="0.92">
+      <ellipse cx="89" cy="67" rx="31" ry="18" fill="#ffffff" opacity="0.2" />
+      <ellipse cx="154" cy="86" rx="34" ry="20" fill="#c6d7f1" opacity="0.16" />
+      <path d="M110 38 C123 41, 132 50, 136 63" stroke="#ffffff" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.1" />
+    </g>
+    <g filter="url(#watercolorBloom)" opacity="0.5">
+      <ellipse cx="108" cy="80" rx="54" ry="46" fill="#ffffff" opacity="0.62" />
+      <ellipse cx="137" cy="116" rx="60" ry="34" fill="#9ab7e8" opacity="0.28" />
+      <ellipse cx="63" cy="133" rx="37" ry="19" fill="#ec8a9d" opacity="0.24" />
+      <ellipse cx="124" cy="38" rx="24" ry="12" fill="#e18cab" opacity="0.35" />
+      <ellipse cx="146" cy="30" rx="19" ry="10" fill="#87c0f2" opacity="0.4" />
+      <ellipse cx="101" cy="29" rx="17" ry="9" fill="#f2d06f" opacity="0.32" />
+    </g>
+    <rect width="240" height="160" rx="22" fill="url(#paperGrain)" opacity="0.2" />
+  `;
+}
+
+function buildColoredPencilPortrait(preview: (typeof ILLUSTRATION_STYLE_OPTIONS)[number]["preview"]) {
+  return `
+    <g filter="url(#pencilSoft)">
+      <rect width="240" height="160" rx="22" fill="#f7f4ef" />
+      <g opacity="0.34">
+        <rect x="124" y="12" width="4" height="116" rx="2" fill="#766f66" />
+        <rect x="136" y="8" width="4" height="126" rx="2" fill="#766f66" />
+        <rect x="148" y="11" width="4" height="122" rx="2" fill="#766f66" />
+        <rect x="160" y="8" width="4" height="126" rx="2" fill="#766f66" />
+        <rect x="172" y="10" width="4" height="121" rx="2" fill="#766f66" />
+        <rect x="184" y="8" width="4" height="126" rx="2" fill="#766f66" />
+      </g>
+      <path d="M15 58 C18 24, 45 12, 71 22 C57 31, 47 44, 42 60 C31 61, 22 60, 15 58 Z" fill="#dfe4d5" opacity="0.65" />
+      <path d="M24 78 C27 48, 55 35, 81 44 C69 53, 61 66, 58 81 C46 82, 34 81, 24 78 Z" fill="#d8e1d5" opacity="0.6" />
+      <path d="M67 34 C85 15, 122 12, 145 27 C164 39, 171 61, 169 91 C166 122, 146 143, 108 144 C77 144, 54 126, 49 97 C45 72, 51 49, 67 34 Z" fill="#716b6f" opacity="0.8" />
+      <path d="M72 49 C87 31, 122 29, 138 46 C151 60, 150 92, 137 110 C125 126, 95 129, 80 115 C65 101, 61 66, 72 49 Z" fill="#ead9cb" opacity="0.94" />
+      <path d="M42 131 C61 117, 82 111, 104 112 C123 113, 140 121, 151 136 L151 160 L42 160 Z" fill="#f2d7dd" opacity="0.7" />
+      <path d="M145 98 C152 79, 172 71, 191 79 C208 87, 216 108, 216 131 C200 127, 189 126, 176 128 C162 120, 151 112, 145 98 Z" fill="#d8c1b6" opacity="0.8" />
+    </g>
+    <g opacity="0.75">
+      <path d="M78 70 C83 63, 93 61, 102 65" stroke="#59545d" stroke-width="2.2" stroke-linecap="round" fill="none" />
+      <path d="M109 67 C118 61, 130 61, 138 67" stroke="#59545d" stroke-width="2.2" stroke-linecap="round" fill="none" />
+      <ellipse cx="91" cy="76" rx="6.4" ry="4.4" fill="#3a353a" opacity="0.84" />
+      <ellipse cx="123" cy="76" rx="6.4" ry="4.4" fill="#3a353a" opacity="0.84" />
+      <path d="M101 88 C104 92, 110 92, 114 88" stroke="#8e7061" stroke-width="1.8" stroke-linecap="round" fill="none" />
+      <path d="M82 96 C92 107, 113 109, 129 98" stroke="#7f5954" stroke-width="3" stroke-linecap="round" fill="none" />
+      <path d="M176 111 C181 114, 187 114, 191 111" stroke="#7f5954" stroke-width="1.7" stroke-linecap="round" fill="none" />
+    </g>
+    <g opacity="0.48">
+      <path d="M18 32 L211 151" stroke="#8a7d73" stroke-width="0.8" />
+      <path d="M6 39 L199 158" stroke="#8a7d73" stroke-width="0.8" />
+      <path d="M22 16 L226 142" stroke="#8a7d73" stroke-width="0.7" />
+      <path d="M34 14 L238 140" stroke="#8a7d73" stroke-width="0.7" />
+      <path d="M4 71 L174 160" stroke="#8a7d73" stroke-width="0.7" />
+      <path d="M0 56 L188 160" stroke="#8a7d73" stroke-width="0.7" />
+      <path d="M42 0 L239 113" stroke="#8a7d73" stroke-width="0.7" />
+    </g>
+    <rect width="240" height="160" rx="22" fill="url(#paperGrain)" opacity="0.24" />
+  `;
+}
+
+function buildPaperCutPortrait(preview: (typeof ILLUSTRATION_STYLE_OPTIONS)[number]["preview"]) {
+  return `
+    <g opacity="0.18" transform="translate(5 5)">
+      <rect width="240" height="160" rx="22" fill="#d1cbc2" />
+      <path d="M15 58 C18 24, 45 12, 71 22 C57 31, 47 44, 42 60 C31 61, 22 60, 15 58 Z" fill="#74a657" />
+      <path d="M24 78 C27 48, 55 35, 81 44 C69 53, 61 66, 58 81 C46 82, 34 81, 24 78 Z" fill="#95c773" />
+      <path d="M67 34 C85 15, 122 12, 145 27 C164 39, 171 61, 169 91 C166 122, 146 143, 108 144 C77 144, 54 126, 49 97 C45 72, 51 49, 67 34 Z" fill="#2e2830" />
+      <path d="M72 49 C87 31, 122 29, 138 46 C151 60, 150 92, 137 110 C125 126, 95 129, 80 115 C65 101, 61 66, 72 49 Z" fill="#d99b6b" />
+      <path d="M42 131 C61 117, 82 111, 104 112 C123 113, 140 121, 151 136 L151 160 L42 160 Z" fill="#ef9db5" />
+      <path d="M145 98 C152 79, 172 71, 191 79 C208 87, 216 108, 216 131 C200 127, 189 126, 176 128 C162 120, 151 112, 145 98 Z" fill="#c78c67" />
+    </g>
+    <g>
+      <rect width="240" height="160" rx="22" fill="#ece1d2" />
+      <rect x="124" y="12" width="4" height="116" rx="2" fill="#7a7064" />
+      <rect x="136" y="8" width="4" height="126" rx="2" fill="#7a7064" />
+      <rect x="148" y="11" width="4" height="122" rx="2" fill="#7a7064" />
+      <rect x="160" y="8" width="4" height="126" rx="2" fill="#7a7064" />
+      <rect x="172" y="10" width="4" height="121" rx="2" fill="#7a7064" />
+      <rect x="184" y="8" width="4" height="126" rx="2" fill="#7a7064" />
+      <path d="M14 58 L44 22 L74 24 L53 61 Z" fill="#7bb65e" />
+      <path d="M25 80 L50 46 L82 47 L59 82 Z" fill="#98cf79" />
+      <path d="M66 34 C84 15, 122 12, 145 27 L168 58 L155 111 L123 144 L79 144 L49 97 L52 49 Z" fill="#2d252d" />
+      <path d="M72 49 C87 31, 121 29, 138 46 L149 79 L137 110 L114 127 L84 122 L66 95 L63 66 Z" fill="#d89a69" />
+      <path d="M79 70 L101 64 L104 73 L83 80 Z" fill="#23191d" />
+      <path d="M111 68 L137 67 L138 77 L110 78 Z" fill="#23191d" />
+      <path d="M82 96 C94 106, 112 108, 129 99 L130 103 C112 113, 93 112, 80 100 Z" fill="#8c473b" />
+      <path d="M42 131 L104 112 L151 136 L151 160 L42 160 Z" fill="#f0a8ba" />
+      <path d="M145 98 L168 77 L191 79 L216 131 L176 128 Z" fill="#c68d67" />
+      <ellipse cx="184" cy="101" rx="6" ry="4.5" fill="#241a1d" />
+    </g>
+  `;
+}
+
+function buildStyleTreatment(style: IllustrationStyle, preview: (typeof ILLUSTRATION_STYLE_OPTIONS)[number]["preview"]) {
+  const scene = buildSharedStyleScene(preview);
+  const pencilLines = Array.from({ length: 14 }, (_, index) => {
+    const startY = 42 + index * 7;
+    const endY = startY + 10;
+    return `<path d="M14 ${startY} C78 ${startY - 5}, 154 ${endY + 4}, 226 ${endY}" stroke="${preview.frame}" stroke-width="1.2" stroke-linecap="round" opacity="${index % 2 === 0 ? "0.18" : "0.12"}" fill="none" />`;
+  }).join("");
+
+  switch (style) {
+    case "classic-storybook":
+      return `
+        <g opacity="0.98">${scene}</g>
+        <path d="M56 136 C87 126, 120 126, 165 137" stroke="#fff4df" stroke-width="5" stroke-linecap="round" opacity="0.24" fill="none" />
+      `;
+    case "watercolor":
+      return `
+        ${buildWatercolorScene(preview)}
+      `;
+    case "cartoon":
+      return `
+        <g filter="url(#cartoonPosterize)"><g filter="url(#cartoonOutline)"><g filter="url(#cartoonBoost)">${scene}</g></g></g>
+      `;
+    case "gouache":
+      return `
+        <g filter="url(#gouacheMatte)">${scene}</g>
+        <rect width="240" height="160" rx="22" fill="url(#paperGrain)" opacity="0.14" />
+      `;
+    case "colored-pencil":
+      return `
+        ${buildColoredPencilPortrait(preview)}
+        ${pencilLines}
+      `;
+    case "paper-cut":
+      return `
+        ${buildPaperCutPortrait(preview)}
+      `;
+    case "soft-digital-painting":
+      return `
+        <g filter="url(#digitalPaint)">${scene}</g>
+        <ellipse cx="104" cy="78" rx="46" ry="34" fill="#ffffff" opacity="0.08" />
+        <ellipse cx="154" cy="112" rx="42" ry="24" fill="#ffffff" opacity="0.08" />
+      `;
+    default:
+      return scene;
+  }
+}
+
+function buildStylePreviewDataUrl(style: IllustrationStyle) {
+  const option = ILLUSTRATION_STYLE_OPTIONS.find((item) => item.value === style) ?? ILLUSTRATION_STYLE_OPTIONS[0];
+  const styledScene = buildStyleTreatment(style, option.preview);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-hidden="true">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${option.preview.sky}" />
+          <stop offset="100%" stop-color="${option.preview.texture}" />
+        </linearGradient>
+        <filter id="watercolorWash" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.9" />
+        </filter>
+        <filter id="watercolorBloom" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="5.5" />
+        </filter>
+        <filter id="watercolorPigment" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8" xChannelSelector="R" yChannelSelector="G" />
+          <feGaussianBlur stdDeviation="0.8" />
+        </filter>
+        <filter id="cartoonBoost" x="-10%" y="-10%" width="120%" height="120%">
+          <feColorMatrix type="saturate" values="1.35" />
+          <feComponentTransfer>
+            <feFuncR type="gamma" amplitude="1" exponent="0.9" offset="0" />
+            <feFuncG type="gamma" amplitude="1" exponent="0.9" offset="0" />
+            <feFuncB type="gamma" amplitude="1" exponent="0.9" offset="0" />
+          </feComponentTransfer>
+        </filter>
+        <filter id="cartoonOutline" x="-15%" y="-15%" width="130%" height="130%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="1.4" result="expanded" />
+          <feFlood flood-color="#201d2b" flood-opacity="0.45" result="ink" />
+          <feComposite in="ink" in2="expanded" operator="in" result="outline" />
+          <feMerge>
+            <feMergeNode in="outline" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="cartoonPosterize" x="-10%" y="-10%" width="120%" height="120%">
+          <feComponentTransfer>
+            <feFuncR type="discrete" tableValues="0 0.18 0.38 0.58 0.8 1" />
+            <feFuncG type="discrete" tableValues="0 0.18 0.38 0.58 0.8 1" />
+            <feFuncB type="discrete" tableValues="0 0.18 0.38 0.58 0.8 1" />
+          </feComponentTransfer>
+        </filter>
+        <filter id="gouacheMatte" x="-15%" y="-15%" width="130%" height="130%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="9" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.4" xChannelSelector="R" yChannelSelector="G" />
+          <feColorMatrix type="saturate" values="0.88" />
+        </filter>
+        <filter id="paperCutFlatten" x="-15%" y="-15%" width="130%" height="130%">
+          <feColorMatrix type="saturate" values="0.9" />
+          <feComponentTransfer>
+            <feFuncR type="discrete" tableValues="0 0.2 0.45 0.7 1" />
+            <feFuncG type="discrete" tableValues="0 0.2 0.45 0.7 1" />
+            <feFuncB type="discrete" tableValues="0 0.2 0.45 0.7 1" />
+          </feComponentTransfer>
+        </filter>
+        <filter id="digitalPaint" x="-15%" y="-15%" width="130%" height="130%">
+          <feGaussianBlur stdDeviation="0.45" result="soft" />
+          <feBlend in="SourceGraphic" in2="soft" mode="screen" />
+        </filter>
+        <filter id="pencilSoft" x="-10%" y="-10%" width="120%" height="120%">
+          <feColorMatrix type="saturate" values="0.28" />
+        </filter>
+        <pattern id="paperGrain" width="120" height="120" patternUnits="userSpaceOnUse">
+          <rect width="120" height="120" fill="#ffffff" opacity="0.02" />
+          <circle cx="12" cy="14" r="0.8" fill="#8a6f5a" opacity="0.14" />
+          <circle cx="34" cy="26" r="0.7" fill="#8a6f5a" opacity="0.12" />
+          <circle cx="72" cy="18" r="0.9" fill="#8a6f5a" opacity="0.12" />
+          <circle cx="101" cy="33" r="0.8" fill="#8a6f5a" opacity="0.1" />
+          <circle cx="20" cy="61" r="0.9" fill="#8a6f5a" opacity="0.12" />
+          <circle cx="56" cy="74" r="0.8" fill="#8a6f5a" opacity="0.1" />
+          <circle cx="88" cy="66" r="0.7" fill="#8a6f5a" opacity="0.13" />
+          <circle cx="109" cy="91" r="0.8" fill="#8a6f5a" opacity="0.12" />
+          <circle cx="26" cy="103" r="0.8" fill="#8a6f5a" opacity="0.1" />
+          <circle cx="67" cy="108" r="0.9" fill="#8a6f5a" opacity="0.12" />
+          <circle cx="95" cy="114" r="0.7" fill="#8a6f5a" opacity="0.1" />
+        </pattern>
+      </defs>
+      <rect width="240" height="160" rx="22" fill="url(#sky)" />
+      ${styledScene}
+    </svg>
+  `.trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+export default function CreateStoryForm({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: session } = useSession();
   const isSignedIn = !!session?.user?.id;
 
@@ -334,6 +621,8 @@ export default function CreateStoryForm() {
     characters: [createEmptyCharacterDraft()],
     selectedTheme: "",
     storyLength: "short",
+    pageCount: 6,
+    illustrationStyle: DEFAULT_ILLUSTRATION_STYLE,
   });
   const [touched, setTouched] = useState<FieldTouchedState>({
     characters: false,
@@ -535,6 +824,13 @@ export default function CreateStoryForm() {
   const handleStoryLengthSelect = (storyLength: StoryLength) => {
     setStoryData((prev) => ({ ...prev, storyLength }));
   };
+  const handleIllustrationStyleSelect = (illustrationStyle: IllustrationStyle) => {
+    setStoryData((prev) => ({ ...prev, illustrationStyle }));
+  };
+
+  const handlePageCountSelect = (pageCount: number) => {
+    setStoryData((prev) => ({ ...prev, pageCount }));
+  };
   const handleTraitToggle = (index: number, trait: StoryTrait) =>
     setStoryData((prev) => ({
       ...prev,
@@ -718,6 +1014,8 @@ export default function CreateStoryForm() {
           characterNames,
           theme: storyData.selectedTheme as StoryTheme,
           storyLength: storyData.storyLength,
+          pageCount: isAdmin ? storyData.pageCount : undefined,
+          illustrationStyle: isAdmin ? storyData.illustrationStyle : undefined,
           characters,
           traits: characters[0]?.traits,
           characterPhotos: characterPhotoPayloads,
@@ -744,6 +1042,7 @@ export default function CreateStoryForm() {
         ...data,
         theme: storyData.selectedTheme,
         storyLength: storyData.storyLength,
+        illustrationStyle: storyData.illustrationStyle,
         childName,
         characterNames,
         characters,
@@ -809,6 +1108,7 @@ export default function CreateStoryForm() {
             title: story2?.title ?? "",
             coverText: story2?.coverText ?? "",
             theme: storyData.selectedTheme ?? "",
+            illustrationStyle: storyData.illustrationStyle,
             childName, characterNames, characters,
             characterPhotos: persistedCharacterPhotos,
             childPhotoUrl: mainCharacterPhoto?.persistedPhotoUrl,
@@ -1349,6 +1649,92 @@ export default function CreateStoryForm() {
           })}
         </div>
       </StoryFormSection>
+
+      {isAdmin && (
+        <StoryFormSection
+          number={4}
+          title="Number of pages"
+          hint="Admin-only override. Controls how many story pages the AI generates."
+        >
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Number of pages">
+              {Array.from({ length: 10 }, (_, index) => index + 1).map((n) => {
+              const isSelected = storyData.pageCount === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => handlePageCountSelect(n)}
+                  className={`w-14 rounded-xl border py-3 text-center text-sm font-semibold transition-all duration-200
+                              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                              ${isSelected
+                                ? "border-[#FC800A] bg-[#FFF4E8] text-[#FC800A] shadow-[0_4px_14px_rgba(252,128,10,0.15)]"
+                                : "border-[#FFD5C0] bg-white/80 text-[#171E45] hover:border-[#FC800A]/35 hover:bg-[#FFF9F2]"
+                              }`}
+                >
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+        </StoryFormSection>
+      )}
+
+      {isAdmin && (
+        <StoryFormSection
+          number={5}
+          title="Choose illustration style"
+          hint="Admin-only override. This changes the art direction used for cover and page generation."
+        >
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Illustration style">
+            {ILLUSTRATION_STYLE_OPTIONS.map((option) => {
+              const isSelected = storyData.illustrationStyle === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => handleIllustrationStyleSelect(option.value)}
+                  className={`overflow-hidden rounded-[1.5rem] border text-left transition-all duration-200
+                              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                              ${isSelected
+                                ? "border-[#FC800A] bg-[#FFF7EE] shadow-[0_12px_30px_rgba(252,128,10,0.14)]"
+                                : "border-[#FFD5C0] bg-white hover:border-[#FC800A]/35 hover:bg-[#FFF9F2]"
+                              }`}
+                >
+                  <div className="relative border-b border-[#FFD5C0]/60 bg-[#FCF7EE] p-3">
+                    <div
+                      aria-hidden="true"
+                      className="h-36 w-full rounded-[1.1rem] border border-[#FFD5C0]/70 overflow-hidden"
+                      style={{
+                        backgroundImage: "url('/style-samples.png')",
+                        backgroundSize: "300% auto",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: `${option.sampleGridCol * 50}% ${option.sampleYPercent}%`,
+                      }}
+                    />
+                    {isSelected && (
+                      <span className="absolute right-5 top-5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#FC800A] text-sm font-bold text-white shadow-[0_6px_18px_rgba(252,128,10,0.35)]" aria-hidden="true">
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-base text-[#171E45]" style={{ fontFamily: "var(--font-rowdies)" }}>
+                        {option.label}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-[#020202]/55">{option.shortDescription}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </StoryFormSection>
+      )}
 
       {/* ── Submit ── */}
       <div className="flex flex-col items-center gap-3 pt-4">

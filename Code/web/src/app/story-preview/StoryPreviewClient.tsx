@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import type {
   GeneratedStorybook,
   GeneratedStoryImage,
+  IllustrationStyle,
   PageImagePrompt,
   CoverImagePrompt,
   CharacterProfile,
@@ -22,6 +23,7 @@ const SESSION_KEY = "heroStorybookDraft";
 
 interface DraftExtras {
   theme?: string;
+  illustrationStyle?: IllustrationStyle;
   characterNames?: string[];
   characters?: StoryCharacterInput[];
   characterPhotos?: CharacterPhotoInput[];
@@ -84,6 +86,7 @@ function getDraftImageGenerationContext(
     characterProfiles,
     characterPhotos: draft.characterPhotos ?? [],
     sharedContextPrompt: "",
+    illustrationStyle: draft.illustrationStyle,
   };
 }
 

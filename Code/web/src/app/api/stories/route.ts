@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
+import { isAdminEmail } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { uploadBase64Image } from "@/lib/supabase-server";
 import type {
   CharacterPhotoInput,
   GeneratedStory,
+  IllustrationStyle,
   PersistedCharacterPhoto,
   StoryCharacterInput,
   StoredStoryData,
@@ -14,6 +17,7 @@ interface SaveStoryRequest {
   title: string;
   coverText: string;
   theme: string;
+  illustrationStyle?: IllustrationStyle;
   childName: string;
   characterNames?: string[];
   characters?: StoryCharacterInput[];
@@ -139,6 +143,7 @@ export async function POST(request: NextRequest) {
     title,
     coverText,
     theme,
+    illustrationStyle,
     childName,
     characterNames,
     characters,
@@ -152,6 +157,9 @@ export async function POST(request: NextRequest) {
   } = body;
 
   const userId = session.user.id;
+  const normalizedIllustrationStyle = isAdminEmail(session.user.email)
+    ? illustrationStyle ?? DEFAULT_ILLUSTRATION_STYLE
+    : DEFAULT_ILLUSTRATION_STYLE;
   const timestamp = Date.now();
   let persistedChildPhotoUrl = childPhotoUrl;
   let persistedCharacterPhotos: PersistedCharacterPhoto[] = [];
@@ -229,6 +237,7 @@ export async function POST(request: NextRequest) {
     characterNames,
     characters,
     characterPhotos: persistedCharacterPhotos,
+    illustrationStyle: normalizedIllustrationStyle,
   };
 
   const story = await prisma.story.create({

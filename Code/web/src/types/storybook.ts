@@ -21,6 +21,15 @@ export type StoryTrait = "Brave" | "Curious" | "Funny" | "Kind";
 
 export type StoryLength = "short" | "standard" | "long";
 
+export type IllustrationStyle =
+  | "classic-storybook"
+  | "watercolor"
+  | "cartoon"
+  | "gouache"
+  | "colored-pencil"
+  | "paper-cut"
+  | "soft-digital-painting";
+
 export interface StoryCharacterInput {
   name: string;
   age: number;
@@ -49,6 +58,8 @@ export interface StoryInput {
   ageBand?: AgeBand;
   theme: StoryTheme;
   storyLength?: StoryLength;
+  pageCount?: number;
+  illustrationStyle?: IllustrationStyle;
   traits?: StoryTrait[];
   uploadedImageMimeType?: string;
   uploadedImageBase64?: string;
@@ -87,6 +98,7 @@ export interface StoredStoryData extends GeneratedStory {
   characterNames?: string[];
   characters?: StoryCharacterInput[];
   characterPhotos?: PersistedCharacterPhoto[];
+  illustrationStyle?: IllustrationStyle;
 }
 
 export interface PageImagePrompt {
@@ -104,6 +116,7 @@ export interface StoryImageGenerationContext {
   characterProfiles: CharacterProfile[];
   characterPhotos: CharacterPhotoInput[];
   sharedContextPrompt: string;
+  illustrationStyle?: IllustrationStyle;
 }
 
 export interface GeneratedStorybook {
@@ -112,6 +125,7 @@ export interface GeneratedStorybook {
   characters?: StoryCharacterInput[];
   characterPhotos?: CharacterPhotoInput[];
   characterProfiles?: CharacterProfile[];
+  illustrationStyle?: IllustrationStyle;
   imageGenerationContext?: StoryImageGenerationContext;
   characterProfile: CharacterProfile;
   story: GeneratedStory;

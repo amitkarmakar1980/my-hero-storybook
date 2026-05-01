@@ -120,7 +120,7 @@ function storyLayout(text: string): {
   return              { fontSize: "clamp(1.05rem, 2.1vw, 1.35rem)",  lineHeight: 1.9 };
 }
 
-function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "story" }>; index: number }) {
+function StorySpread({ page, index, totalStoryPages }: { page: Extract<ReadingPage, { type: "story" }>; index: number; totalStoryPages: number }) {
   const imageLeft = index % 2 === 0;
   const { fontSize, lineHeight } = storyLayout(page.text);
 
@@ -142,7 +142,7 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
             ))}
           </div>
           <p className="mt-6 text-[#FC800A]/40 font-medium tracking-widest text-right" style={{ fontSize: "clamp(0.6rem, 1vw, 0.7rem)" }}>
-            {page.pageNumber} / {6}
+            {page.pageNumber} / {totalStoryPages}
           </p>
         </div>
       </div>
@@ -166,7 +166,7 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
             ))}
           </div>
           <p className="mt-6 text-[#FC800A]/40 font-medium tracking-widest text-right text-xs">
-            {page.pageNumber} / {6}
+            {page.pageNumber} / {totalStoryPages}
           </p>
         </div>
       </div>
@@ -231,6 +231,7 @@ function ProgressDots({ total, current, onDotClick }: { total: number; current: 
 export default function ReadingMode(props: ReadingModeProps) {
   const { onClose } = props;
   const pages = buildPages(props);
+  const totalStoryPages = props.storyJson.pages.length;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [visible, setVisible] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
@@ -325,7 +326,7 @@ export default function ReadingMode(props: ReadingModeProps) {
         >
           {currentPage.type === "cover" && <CoverSpread page={currentPage} />}
           {currentPage.type === "story" && (
-            <StorySpread page={currentPage} index={currentIndex} />
+            <StorySpread page={currentPage} index={currentIndex} totalStoryPages={totalStoryPages} />
           )}
           {currentPage.type === "end" && <EndSpread page={currentPage} />}
         </div>
