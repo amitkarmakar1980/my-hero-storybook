@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import type { StoredStoryData } from "@/types/storybook";
+
+const ReadingMode = dynamic(() => import("@/components/ReadingMode"), { ssr: false });
 
 interface SavedStory {
   id: string;
@@ -65,6 +68,13 @@ function SavedPageImage({
   );
 }
 
+function adaptiveTextStyle(text: string): React.CSSProperties {
+  const len = text.length;
+  if (len < 200) return { fontSize: "clamp(1.05rem, 2vw, 1.35rem)", lineHeight: 1.85 };
+  if (len < 400) return { fontSize: "clamp(0.95rem, 1.7vw, 1.15rem)", lineHeight: 1.8 };
+  return              { fontSize: "clamp(0.82rem, 1.4vw, 0.98rem)",  lineHeight: 1.75 };
+}
+
 function SavedStoryPageSpread({
   pageNumber,
   pageText,
@@ -91,7 +101,7 @@ function SavedStoryPageSpread({
 
         <div className="order-2 w-full md:w-1/2">
           <div className="flex h-full flex-col justify-center px-6 py-6 md:px-12 md:py-12">
-            <p className="max-w-[28ch] text-lg leading-8 text-[#2F3555] md:text-[1.55rem] md:leading-10">
+            <p className="text-[#2F3555]" style={adaptiveTextStyle(pageText)}>
               {pageText}
             </p>
           </div>
@@ -106,6 +116,7 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenStatus, setRegenStatus] = useState<"idle" | "done" | "error">("idle");
+  const [readingMode, setReadingMode] = useState(false);
   const heroName = story.childName.split(" ")[0];
 
   const handleRegenerate = async () => {
@@ -146,6 +157,18 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
 
   return (
     <>
+      {readingMode && (
+        <ReadingMode
+          title={story.title}
+          coverText={story.coverText}
+          heroName={heroName}
+          coverImageUrl={story.coverImageUrl}
+          storyJson={story.storyJson}
+          pageImagesJson={story.pageImagesJson}
+          onClose={() => setReadingMode(false)}
+        />
+      )}
+
       {isAdmin && (
         <div className="bg-[#171E45] text-white text-sm px-5 py-3 flex items-center gap-4">
           <span className="opacity-60">👁 Admin view</span>
@@ -177,6 +200,24 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
         <div className="pointer-events-none absolute left-1/2 top-24 hidden h-[calc(100%-12rem)] w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.9),rgba(230,212,190,0))] xl:block" aria-hidden="true" />
 
         <header className="mx-auto max-w-5xl px-4 pb-8 pt-8 md:px-6 md:pb-12 md:pt-12">
+          {/* Reading Mode button — top right of the cover card */}
+          <div className="flex justify-end mb-3">
+            <button
+              type="button"
+              onClick={() => setReadingMode(true)}
+              className="flex items-center gap-2 rounded-full bg-[#171E45] px-4 py-2 text-sm font-medium text-white
+                         shadow-[0_4px_16px_rgba(23,30,69,0.25)]
+                         hover:bg-[#0f1430] hover:-translate-y-0.5
+                         active:scale-[0.97] transition-all duration-200"
+            >
+              <svg className="w-3.5 h-3.5 opacity-80" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clipRule="evenodd" />
+              </svg>
+              Reading Mode
+            </button>
+          </div>
+
           <div className="rounded-[2.25rem] border border-[#E6D4BE] bg-[rgba(255,252,246,0.88)] px-5 py-6 shadow-[0_20px_60px_rgba(83,57,33,0.12)] backdrop-blur-sm md:px-8 md:py-8">
             <div className="flex min-h-[78vh] flex-col md:min-h-[820px]">
               <div className="flex min-h-[18%] items-center justify-center px-2 pb-4 pt-2 text-center md:min-h-[20%] md:pb-6">

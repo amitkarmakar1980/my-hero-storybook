@@ -276,6 +276,13 @@ function PageImage({
   );
 }
 
+function adaptiveTextStyle(text: string): React.CSSProperties {
+  const len = text.length;
+  if (len < 200) return { fontSize: "clamp(1.05rem, 2vw, 1.35rem)", lineHeight: 1.85 };
+  if (len < 400) return { fontSize: "clamp(0.95rem, 1.7vw, 1.15rem)", lineHeight: 1.8 };
+  return              { fontSize: "clamp(0.82rem, 1.4vw, 0.98rem)",  lineHeight: 1.75 };
+}
+
 // ── Story page spread ────────────────────────────────────────────────────────
 
 function StoryPageSpread({
@@ -317,7 +324,7 @@ function StoryPageSpread({
                         border-t border-[#E6D4BE] md:border-t-0
                         md:border-l md:border-[#E6D4BE]">
           <div className="w-full h-full overflow-y-auto flex items-center">
-            <p className="px-7 py-8 md:px-10 text-base leading-8 text-[#2F3555] md:text-lg md:leading-9">
+            <p className="px-7 py-8 md:px-10 text-[#2F3555]" style={adaptiveTextStyle(pageText)}>
               {pageText}
             </p>
           </div>
