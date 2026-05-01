@@ -131,7 +131,12 @@ export default function AdminClient() {
     }
   }, []);
 
-  useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => {
+    fetchStats();
+    const onVisible = () => { if (document.visibilityState === "visible") fetchStats(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchStats]);
 
   async function saveModel() {
     setSaving(true);
@@ -272,6 +277,7 @@ export default function AdminClient() {
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Upload Size</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Total Cost</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Last Story Generation</th>
+                      <th className="border-b border-[#FFD5C0]/60 px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -289,6 +295,11 @@ export default function AdminClient() {
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{formatBytes(user.totalUploadedBytes)}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">${user.totalCost.toFixed(2)}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{formatAdminDate(user.lastStoryGenerationDate)}</td>
+                          <td className="border-b border-[#FFD5C0]/30 px-3 py-3">
+                            <a href={`/admin/users/${user.id}`} className="text-xs font-medium text-[#FC800A] hover:underline underline-offset-2">
+                              View →
+                            </a>
+                          </td>
                         </tr>
                       ))
                     ) : (

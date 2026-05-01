@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { isAdminEmail } from "@/lib/config";
 import StorySavedClient from "./StorySavedClient";
 import type { StoredStoryData } from "@/types/storybook";
 
@@ -16,10 +17,12 @@ export default async function SavedStoryPage({
   const story = await prisma.story.findUnique({ where: { id } });
 
   if (!story) notFound();
-  if (story.userId !== session.user.id) notFound();
+  const isAdmin = isAdminEmail(session.user.email);
+  if (!isAdmin && story.userId !== session.user.id) notFound();
 
   return (
     <StorySavedClient
+      isAdmin={isAdmin}
       story={{
         id: story.id,
         title: story.title,

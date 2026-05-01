@@ -1,4 +1,4 @@
-import type { GeneratedStory } from "@/types/storybook";
+import type { GeneratedStory, StoryLength } from "@/types/storybook";
 
 interface PageImageData {
   imageUrl?: string;
@@ -10,6 +10,39 @@ interface DownloadPdfOptions {
   story: GeneratedStory;
   coverImageUrl: string | undefined;
   pageImages: Record<number, PageImageData>;
+}
+
+function inferStoryLength(story: GeneratedStory): StoryLength {
+  const pageWordCounts = story.pages.map((page) => {
+    const words = page.text.trim().match(/\S+/g);
+    return words?.length ?? 0;
+  });
+
+  const averageWordsPerPage = pageWordCounts.reduce((sum, count) => sum + count, 0) / Math.max(pageWordCounts.length, 1);
+
+  if (averageWordsPerPage >= 95) {
+    return "long";
+  }
+
+  if (averageWordsPerPage >= 68) {
+    return "standard";
+  }
+
+  return "short";
+}
+
+function getStoryTextLayout(story: GeneratedStory): { fontSize: number; lineHeightFactor: number } {
+  const storyLength = inferStoryLength(story);
+
+  if (storyLength === "short") {
+    return { fontSize: 14, lineHeightFactor: 1.7 };
+  }
+
+  if (storyLength === "standard") {
+    return { fontSize: 13, lineHeightFactor: 1.68 };
+  }
+
+  return { fontSize: 12, lineHeightFactor: 1.65 };
 }
 
 // ── Font loading ──────────────────────────────────────────────────────────────
@@ -58,6 +91,7 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
   const ACCENT_BORDER = "#FFD5C0";
 
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const storyTextLayout = getStoryTextLayout(story);
 
   // ── Embed Poppins ─────────────────────────────────────────────────────────
   // Fetch from Google Fonts static CDN (CSS2 API gives direct TTF/WOFF2 URLs)
@@ -102,9 +136,10 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
         drawH = maxH;
         drawW = maxH * ratio;
       }
-      // Center horizontally if narrower than maxW
+      // Center inside the frame when the fitted image does not use the full slot.
       const offsetX = x + (maxW - drawW) / 2;
-      pdf.addImage(src, "JPEG", offsetX, y, drawW, drawH, undefined, "FAST");
+      const offsetY = y + (maxH - drawH) / 2;
+      pdf.addImage(src, "JPEG", offsetX, offsetY, drawW, drawH, undefined, "FAST");
       return drawH;
     } catch {
       pdf.setFillColor(241, 232, 220);
@@ -154,13 +189,14 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
     pdf.setFillColor(ACCENT_BORDER);
     pdf.rect(0, 0, W, 2, "F");
 
-    const SPREAD_GAP = 12;
-    const COLUMN_W = (CONTENT_W - SPREAD_GAP) / 2;
+    const SPREAD_GAP = 10;
+    const IMAGE_COLUMN_W = (CONTENT_W - SPREAD_GAP) * 0.56;
+    const TEXT_COLUMN_W = CONTENT_W - SPREAD_GAP - IMAGE_COLUMN_W;
     const SPREAD_TOP = MARGIN + 10;
     const SPREAD_H = H - SPREAD_TOP - MARGIN - 10;
     const IMAGE_X = MARGIN;
-    const TEXT_X = MARGIN + COLUMN_W + SPREAD_GAP;
-    const DIVIDER_X = MARGIN + COLUMN_W + SPREAD_GAP / 2;
+    const TEXT_X = MARGIN + IMAGE_COLUMN_W + SPREAD_GAP;
+    const DIVIDER_X = MARGIN + IMAGE_COLUMN_W + SPREAD_GAP / 2;
 
     // Center separator for the landscape spread
     pdf.setDrawColor(230, 212, 190);
@@ -171,27 +207,45 @@ export async function downloadStoryPdf(opts: DownloadPdfOptions): Promise<void> 
     const illus = pageImages[page.pageNumber];
     const MAX_ILLUS_H = SPREAD_H;
     if (illus?.imageUrl) {
-      const drawnH = await drawImageFit(illus.imageUrl, IMAGE_X, SPREAD_TOP, COLUMN_W, MAX_ILLUS_H);
+      await drawImageFit(illus.imageUrl, IMAGE_X, SPREAD_TOP, IMAGE_COLUMN_W, MAX_ILLUS_H);
       // Thin border around image
       pdf.setDrawColor(220, 200, 180);
       pdf.setLineWidth(0.25);
       const { w: nw, h: nh } = await getImageNaturalSize(illus.imageUrl);
       const ratio = nw / nh;
-      let bW = COLUMN_W;
-      let bH = COLUMN_W / ratio;
+      let bW = IMAGE_COLUMN_W;
+      let bH = IMAGE_COLUMN_W / ratio;
       if (bH > MAX_ILLUS_H) { bH = MAX_ILLUS_H; bW = MAX_ILLUS_H * ratio; }
-      const bX = IMAGE_X + (COLUMN_W - bW) / 2;
-      pdf.roundedRect(bX, SPREAD_TOP, bW, bH, 2, 2);
+      const bX = IMAGE_X + (IMAGE_COLUMN_W - bW) / 2;
+      const bY = SPREAD_TOP + (MAX_ILLUS_H - bH) / 2;
+      pdf.roundedRect(bX, bY, bW, bH, 2, 2);
     } else {
       pdf.setFillColor(241, 232, 220);
-      pdf.roundedRect(IMAGE_X, SPREAD_TOP, COLUMN_W, MAX_ILLUS_H, 3, 3, "F");
+      pdf.roundedRect(IMAGE_X, SPREAD_TOP, IMAGE_COLUMN_W, MAX_ILLUS_H, 3, 3, "F");
     }
 
+    const TEXT_PADDING_X = 6;
+    const TEXT_PADDING_Y = 12;
+    const textWidth = TEXT_COLUMN_W - TEXT_PADDING_X * 2;
+
     setFont("normal");
-    pdf.setFontSize(12);
+    pdf.setFontSize(storyTextLayout.fontSize);
     pdf.setTextColor(NAVY);
-    const pageLines = pdf.splitTextToSize(page.text, COLUMN_W) as string[];
-    pdf.text(pageLines, TEXT_X, SPREAD_TOP + 10, { lineHeightFactor: 1.65, maxWidth: COLUMN_W });
+    const pageLines = pdf.splitTextToSize(page.text, textWidth) as string[];
+    const textDimensions = pdf.getTextDimensions(pageLines.join("\n"), {
+      fontSize: storyTextLayout.fontSize,
+      maxWidth: textWidth,
+    });
+    const textTop = Math.max(
+      SPREAD_TOP + TEXT_PADDING_Y,
+      SPREAD_TOP + (SPREAD_H - textDimensions.h) / 2
+    );
+
+    pdf.text(pageLines, TEXT_X + TEXT_PADDING_X, textTop, {
+      baseline: "top",
+      lineHeightFactor: storyTextLayout.lineHeightFactor,
+      maxWidth: textWidth,
+    });
 
     // Footer
     setFont("normal");

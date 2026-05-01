@@ -78,18 +78,18 @@ function SavedStoryPageSpread({
 
   return (
     <article className="relative mb-14 md:mb-20">
-      <div className="relative grid items-stretch gap-6 md:grid-cols-[1.3fr_0.7fr] md:gap-0">
+      <div className={`relative flex flex-col gap-6 md:gap-0 ${isEvenPage ? "md:flex-row-reverse" : "md:flex-row"}`}>
         <div
           className="pointer-events-none absolute bottom-0 left-1/2 top-0 hidden w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.95),rgba(230,212,190,0))] md:block"
           aria-hidden="true"
         />
-        <div className={isEvenPage ? "order-1 md:order-2" : "order-1"}>
-          <div className="h-full">
+        <div className="order-1 flex w-full items-center justify-center md:w-1/2 md:px-6">
+          <div className="w-full max-w-[28rem]">
             <SavedPageImage pageNumber={pageNumber} imageUrl={imageUrl} plain />
           </div>
         </div>
 
-        <div className={isEvenPage ? "order-2 md:order-1" : "order-2"}>
+        <div className="order-2 w-full md:w-1/2">
           <div className="flex h-full flex-col justify-center px-6 py-6 md:px-12 md:py-12">
             <p className="max-w-[28ch] text-lg leading-8 text-[#2F3555] md:text-[1.55rem] md:leading-10">
               {pageText}
@@ -101,10 +101,31 @@ function SavedStoryPageSpread({
   );
 }
 
-export default function StorySavedClient({ story }: { story: SavedStory }) {
+export default function StorySavedClient({ story, isAdmin }: { story: SavedStory; isAdmin?: boolean }) {
   const router = useRouter();
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenStatus, setRegenStatus] = useState<"idle" | "done" | "error">("idle");
   const heroName = story.childName.split(" ")[0];
+
+  const handleRegenerate = async () => {
+    if (isRegenerating) return;
+    setIsRegenerating(true);
+    setRegenStatus("idle");
+    try {
+      const res = await fetch(`/api/admin/stories/${story.id}/regenerate`, { method: "POST" });
+      if (res.ok) {
+        setRegenStatus("done");
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        setRegenStatus("error");
+      }
+    } catch {
+      setRegenStatus("error");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const handleDownloadPdf = async () => {
     if (isPdfGenerating) return;
@@ -125,6 +146,32 @@ export default function StorySavedClient({ story }: { story: SavedStory }) {
 
   return (
     <>
+      {isAdmin && (
+        <div className="bg-[#171E45] text-white text-sm px-5 py-3 flex items-center gap-4">
+          <span className="opacity-60">👁 Admin view</span>
+          <span className="opacity-40">·</span>
+          <span className="opacity-60">Story owner: {story.childName}</span>
+          <div className="ml-auto flex items-center gap-3">
+            {regenStatus === "done" && <span className="text-green-400 text-xs font-medium">Regenerated — reloading…</span>}
+            {regenStatus === "error" && <span className="text-red-400 text-xs font-medium">Regeneration failed</span>}
+            <button
+              type="button"
+              onClick={handleRegenerate}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 rounded-full bg-[#FC800A] px-4 py-1.5 text-xs font-semibold text-white
+                         hover:bg-[#e5720a] active:scale-[0.97] transition-all duration-200
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRegenerating ? (
+                <><Spinner className="w-3.5 h-3.5 text-white" /> Regenerating…</>
+              ) : (
+                "↺ Regenerate Images"
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top,#fff9ef_0%,#f8f3ea_44%,#f0e5d4_100%)]">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" aria-hidden="true" />
         <div className="pointer-events-none absolute left-1/2 top-24 hidden h-[calc(100%-12rem)] w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(230,212,190,0),rgba(230,212,190,0.9),rgba(230,212,190,0))] xl:block" aria-hidden="true" />
