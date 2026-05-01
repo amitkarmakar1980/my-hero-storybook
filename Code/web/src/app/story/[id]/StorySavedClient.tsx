@@ -275,11 +275,11 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
               </div>
             )}
 
-            {/* Reading mode button */}
+            {/* Reading mode button — desktop only */}
             <button
               type="button"
               onClick={() => setReadingMode(true)}
-              className="flex items-center gap-1.5 rounded-full bg-[#FC800A] px-3.5 py-1.5 text-xs font-semibold text-white
+              className="hidden sm:flex items-center gap-1.5 rounded-full bg-[#FC800A] px-3.5 py-1.5 text-xs font-semibold text-white
                          hover:bg-[#e5720a] active:scale-[0.97] transition-all duration-200"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
