@@ -23,14 +23,15 @@ async function saveUploadedPhoto(options: {
 }) {
   const ext = options.filename.split(".").pop() ?? "jpg";
   const path = `${options.userId}/${Date.now()}.${ext}`;
-  const url = await uploadBase64Image(
-    "child-photos",
-    path,
-    normalizePhotoDataUrl(options.photoBase64, options.mimeType)
-  );
+  const dataUrl = normalizePhotoDataUrl(options.photoBase64, options.mimeType);
+  const url = await uploadBase64Image("child-photos", path, dataUrl);
+
+  // Estimate file size from base64 length (base64 encodes 3 bytes per 4 chars)
+  const base64Data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+  const fileSize = Math.round((base64Data.length * 3) / 4);
 
   return prisma.uploadedPhoto.create({
-    data: { userId: options.userId, url, filename: options.filename },
+    data: { userId: options.userId, url, filename: options.filename, fileSize },
   });
 }
 
@@ -99,6 +100,8 @@ export async function POST(request: NextRequest) {
       photoBase64,
       mimeType,
     });
+    // file.size is the exact byte count from the multipart upload — override the estimate
+    await prisma.uploadedPhoto.update({ where: { id: photo.id }, data: { fileSize: file.size } });
 
     return NextResponse.json({ photo });
   } catch (error) {

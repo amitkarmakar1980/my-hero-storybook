@@ -60,6 +60,7 @@ model UploadedPhoto {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   url       String
   filename  String
+  fileSize  Int      @default(0)
   createdAt DateTime @default(now())
 }
 

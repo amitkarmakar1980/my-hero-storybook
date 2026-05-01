@@ -11,6 +11,7 @@ interface AdminUserSummary {
   storyPagesGenerated: number;
   imagesGenerated: number;
   photosUploaded: number;
+  totalUploadedBytes: number;
   totalCost: number;
   lastStoryGenerationDate: string | null;
 }
@@ -50,17 +51,13 @@ export async function GET() {
           id: true,
           name: true,
           email: true,
-          _count: {
-            select: {
-              stories: true,
-              photos: true,
-            },
-          },
+          _count: { select: { stories: true, photos: true } },
           stories: {
             select: { createdAt: true },
             orderBy: { createdAt: "desc" },
             take: 1,
           },
+          photos: { select: { fileSize: true } },
         },
       }),
       prisma.story.groupBy({
@@ -95,6 +92,7 @@ export async function GET() {
       storyPagesGenerated: user._count.stories * STORY_PAGES_PER_BOOK,
       imagesGenerated: user._count.stories * IMAGES_PER_STORY,
       photosUploaded: user._count.photos,
+      totalUploadedBytes: user.photos.reduce((sum, p) => sum + (p.fileSize ?? 0), 0),
       totalCost: user._count.stories * costPerStory,
       lastStoryGenerationDate: user.stories[0]?.createdAt?.toISOString() ?? null,
     }))

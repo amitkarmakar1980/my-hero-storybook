@@ -51,9 +51,17 @@ interface Stats {
     storyPagesGenerated: number;
     imagesGenerated: number;
     photosUploaded: number;
+    totalUploadedBytes: number;
     totalCost: number;
     lastStoryGenerationDate: string | null;
   }>;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatAdminDate(dateString: string | null) {
@@ -100,6 +108,7 @@ function ActivityBar({ day, count, max }: { day: string; count: number; max: num
 export default function AdminClient() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedModel, setSelectedModel] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
@@ -107,11 +116,16 @@ export default function AdminClient() {
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats");
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setStats(data);
         setSelectedModel(data.currentModel);
+        setFetchError(null);
+      } else {
+        setFetchError(`${res.status}: ${data?.error ?? "Unknown error"}`);
       }
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Fetch failed");
     } finally {
       setLoading(false);
     }
@@ -167,6 +181,12 @@ export default function AdminClient() {
           </h1>
           <p className="text-sm text-[#020202]/50 mt-1">Story generation usage and model configuration</p>
         </div>
+
+        {fetchError && (
+          <div className="mb-6 rounded-2xl bg-red-50 border border-red-200 px-5 py-4 text-sm text-red-700 font-mono">
+            API error: {fetchError}
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -249,6 +269,7 @@ export default function AdminClient() {
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Story Pages</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Images Generated</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Photos Uploaded</th>
+                      <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Upload Size</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Total Cost</th>
                       <th className="border-b border-[#FFD5C0]/60 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#020202]/45">Last Story Generation</th>
                     </tr>
@@ -265,6 +286,7 @@ export default function AdminClient() {
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{user.storyPagesGenerated}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{user.imagesGenerated}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{user.photosUploaded}</td>
+                          <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{formatBytes(user.totalUploadedBytes)}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">${user.totalCost.toFixed(2)}</td>
                           <td className="border-b border-[#FFD5C0]/30 px-3 py-3 text-[#171E45]">{formatAdminDate(user.lastStoryGenerationDate)}</td>
                         </tr>
