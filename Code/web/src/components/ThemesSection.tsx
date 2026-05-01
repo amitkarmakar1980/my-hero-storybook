@@ -109,7 +109,7 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
 
       {/* ── Content zone ── */}
       <div className="flex flex-col gap-3 px-5 py-4 flex-1">
-        <p className="text-sm leading-relaxed text-[#171E45]/60 flex-1">
+        <p className="text-sm leading-relaxed text-[#171E45]/80 flex-1">
           {theme.shortDescription}
         </p>
 

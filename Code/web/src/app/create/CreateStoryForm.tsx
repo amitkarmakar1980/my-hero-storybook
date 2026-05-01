@@ -1294,7 +1294,7 @@ export default function CreateStoryForm() {
 
                 {/* ── Content zone ── */}
                 <div className="px-3 py-3 flex-1">
-                  <span className="text-xs text-[#171E45]/55 leading-relaxed">
+                  <span className="text-xs text-[#171E45]/80 leading-relaxed">
                     {theme.shortDescription}
                   </span>
                 </div>
