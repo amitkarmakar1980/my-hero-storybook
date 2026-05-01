@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { formatStoryText } from "@/lib/formatStoryText";
 import type { StoredStoryData } from "@/types/storybook";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -136,12 +137,13 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
     <div className="flex-1 flex flex-col overflow-hidden bg-[#1c1610] min-w-0">
       <div className="flex-1 overflow-y-auto flex flex-col justify-center px-10 py-14">
         <div className="mx-auto w-full" style={{ maxWidth }}>
-          <p
-            className="text-[#e8d8c4]"
-            style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}
-          >
-            {page.text}
-          </p>
+          <div className="flex flex-col gap-4">
+            {formatStoryText(page.text).map((para, i) => (
+              <p key={i} className="text-[#e8d8c4]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}>
+                {para}
+              </p>
+            ))}
+          </div>
           <p className="mt-6 text-[#FC800A]/40 font-medium tracking-widest text-right" style={{ fontSize: "clamp(0.6rem, 1vw, 0.7rem)" }}>
             {page.pageNumber} / {6}
           </p>
@@ -161,12 +163,13 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
           <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
         </div>
         <div className="px-6 py-8 flex-1">
-          <p
-            className="text-[#e8d8c4]"
-            style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}
-          >
-            {page.text}
-          </p>
+          <div className="flex flex-col gap-3">
+            {formatStoryText(page.text).map((para, i) => (
+              <p key={i} className="text-[#e8d8c4]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}>
+                {para}
+              </p>
+            ))}
+          </div>
           <p className="mt-6 text-[#FC800A]/40 font-medium tracking-widest text-right text-xs">
             {page.pageNumber} / {6}
           </p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { formatStoryText } from "@/lib/formatStoryText";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type {
@@ -324,9 +325,11 @@ function StoryPageSpread({
                         border-t border-[#E6D4BE] md:border-t-0
                         md:border-l md:border-[#E6D4BE]">
           <div className="w-full h-full overflow-y-auto flex items-center">
-            <p className="px-7 py-8 md:px-10 text-[#2F3555]" style={adaptiveTextStyle(pageText)}>
-              {pageText}
-            </p>
+            <div className="px-7 py-8 md:px-10 flex flex-col gap-3">
+              {formatStoryText(pageText).map((para, i) => (
+                <p key={i} className="text-[#2F3555]" style={adaptiveTextStyle(pageText)}>{para}</p>
+              ))}
+            </div>
           </div>
         </div>
 

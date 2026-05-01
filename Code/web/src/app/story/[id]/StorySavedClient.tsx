@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { StoredStoryData, StoryImageGenerationContext, GeneratedStory } from "@/types/storybook";
+import { formatStoryText } from "@/lib/formatStoryText";
 
 const ReadingMode = dynamic(() => import("@/components/ReadingMode"), { ssr: false });
 
@@ -127,12 +128,13 @@ function StoryPageSection({
 
   const textPanel = (
     <div className="flex-1 flex flex-col justify-center px-8 py-12 md:px-12 md:py-16 bg-[#120f0a]">
-      <p
-        className="text-[#e0cdb8]"
-        style={{ fontFamily: "Georgia, 'Times New Roman', serif", ...textStyle }}
-      >
-        {pageText}
-      </p>
+      <div className="flex flex-col gap-4">
+        {formatStoryText(pageText).map((para, i) => (
+          <p key={i} className="text-[#e0cdb8]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", ...textStyle }}>
+            {para}
+          </p>
+        ))}
+      </div>
       <p className="mt-8 text-[#FC800A]/30 font-medium tracking-widest" style={{ fontSize: "0.65rem" }}>
         {pageNumber} / {total}
       </p>
@@ -149,9 +151,13 @@ function StoryPageSection({
       <div className="flex flex-col md:hidden w-full">
         {imagePanel}
         <div className="px-6 py-10 bg-[#120f0a]">
-          <p className="text-[#e0cdb8]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", ...textStyle }}>
-            {pageText}
-          </p>
+          <div className="flex flex-col gap-3">
+            {formatStoryText(pageText).map((para, i) => (
+              <p key={i} className="text-[#e0cdb8]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", ...textStyle }}>
+                {para}
+              </p>
+            ))}
+          </div>
           <p className="mt-6 text-[#FC800A]/30 font-medium tracking-widest text-right" style={{ fontSize: "0.65rem" }}>
             {pageNumber} / {total}
           </p>
