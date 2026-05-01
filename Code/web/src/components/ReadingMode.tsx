@@ -113,30 +113,27 @@ function CoverSpread({ page }: { page: Extract<ReadingPage, { type: "cover" }> }
 function storyLayout(text: string): {
   fontSize: string;
   lineHeight: number;
-  imageWidthPct: number; // desktop image column %
-  maxWidth: string;      // text container max-width
 } {
   const len = text.length;
-  if (len < 200) return { fontSize: "clamp(1.5rem, 3.2vw, 2.1rem)",   lineHeight: 2.1, imageWidthPct: 52, maxWidth: "26rem" };
-  if (len < 400) return { fontSize: "clamp(1.25rem, 2.6vw, 1.65rem)", lineHeight: 2.0, imageWidthPct: 46, maxWidth: "34rem" };
-  return              { fontSize: "clamp(1.05rem, 2.1vw, 1.35rem)",  lineHeight: 1.9, imageWidthPct: 38, maxWidth: "48rem" };
+  if (len < 200) return { fontSize: "clamp(1.5rem, 3.2vw, 2.1rem)",   lineHeight: 2.1 };
+  if (len < 400) return { fontSize: "clamp(1.25rem, 2.6vw, 1.65rem)", lineHeight: 2.0 };
+  return              { fontSize: "clamp(1.05rem, 2.1vw, 1.35rem)",  lineHeight: 1.9 };
 }
 
 function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "story" }>; index: number }) {
   const imageLeft = index % 2 === 0;
-  const { fontSize, lineHeight, imageWidthPct, maxWidth } = storyLayout(page.text);
-  const imageWidthStyle = `${imageWidthPct}%`;
+  const { fontSize, lineHeight } = storyLayout(page.text);
 
   const imageDesktopPanel = (
-    <div className="flex-shrink-0 overflow-hidden h-full" style={{ width: imageWidthStyle }}>
+    <div className="w-1/2 flex-shrink-0 overflow-hidden h-full">
       <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
     </div>
   );
 
   const desktopTextPanel = (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#1c1610] min-w-0">
+    <div className="w-1/2 flex flex-col overflow-hidden bg-[#1c1610]">
       <div className="flex-1 overflow-y-auto flex flex-col justify-center px-10 py-14">
-        <div className="mx-auto w-full" style={{ maxWidth }}>
+        <div className="w-full">
           <div className="flex flex-col gap-4">
             {formatStoryText(page.text).map((para, i) => (
               <p key={i} className="text-[#e8d8c4]" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}>
@@ -151,8 +148,6 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
       </div>
     </div>
   );
-
-  const spineLeft = imageLeft ? imageWidthPct : 100 - imageWidthPct;
 
   return (
     <div className="w-full h-full flex flex-col md:flex-row">
@@ -183,8 +178,8 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
 
       {/* Spine shadow */}
       <div
-        className="hidden md:block absolute inset-y-0 pointer-events-none"
-        style={{ left: `${spineLeft}%`, width: 1, background: "linear-gradient(180deg, transparent, rgba(0,0,0,0.5), transparent)" }}
+        className="hidden md:block absolute inset-y-0 left-1/2 pointer-events-none"
+        style={{ width: 1, background: "linear-gradient(180deg, transparent, rgba(0,0,0,0.5), transparent)" }}
         aria-hidden="true"
       />
     </div>
