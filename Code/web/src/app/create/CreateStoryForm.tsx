@@ -46,12 +46,16 @@ const MIN_UPLOAD_PHOTO_QUALITY = 0.6;
 const MAX_LOGGED_IN_CHARACTERS = 5;
 
 const LOADING_STAGES = [
-  { emoji: "📸", text: "Reading your child's details…" },
-  { emoji: "🎭", text: "Crafting your hero's character…" },
-  { emoji: "🌍", text: "Building the story world…" },
-  { emoji: "✍️", text: "Writing the adventure…" },
-  { emoji: "✨", text: "Weaving in the magic…" },
-  { emoji: "📖", text: "Finishing the final pages…" },
+  { emoji: "📸", text: "Studying your hero very carefully…" },
+  { emoji: "🧠", text: "The AI is having a very important think…" },
+  { emoji: "🌍", text: "Building an entire world from scratch…" },
+  { emoji: "✍️", text: "Writing the most epic adventure ever told…" },
+  { emoji: "☕", text: "Waking up the AI artist (it likes coffee)…" },
+  { emoji: "🎨", text: "Mixing the perfect shade of adventure…" },
+  { emoji: "🦕", text: "Convincing the dinosaurs to sit still…" },
+  { emoji: "✨", text: "Sprinkling just the right amount of magic…" },
+  { emoji: "🦄", text: "Shooing away the unicorn photobombers…" },
+  { emoji: "🚀", text: "Almost ready — hang tight, hero incoming…" },
 ] as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -403,18 +407,19 @@ export default function CreateStoryForm() {
       setLoadingProgress(0);
       return;
     }
+    // Slow ticker — stays at 88% max so we can push to 100 manually when done
     let p = 0;
     const interval = setInterval(() => {
-      p = Math.min(p + 0.28, 93);
+      p = Math.min(p + 0.18, 88);
       setLoadingProgress(p);
       setStageIndex(
         Math.min(
-          Math.floor((p / 93) * LOADING_STAGES.length),
-          LOADING_STAGES.length - 1
+          Math.floor((p / 88) * (LOADING_STAGES.length - 2)),
+          LOADING_STAGES.length - 3
         )
       );
-      if (p >= 93) clearInterval(interval);
-    }, 100);
+      if (p >= 88) clearInterval(interval);
+    }, 120);
     return () => clearInterval(interval);
   }, [isLoading]);
 
@@ -735,7 +740,7 @@ export default function CreateStoryForm() {
       }));
       const mainCharacterPhoto = persistedCharacterPhotos[0];
 
-      sessionStorage.setItem("heroStorybookDraft", JSON.stringify({
+      const draftData = {
         ...data,
         theme: storyData.selectedTheme,
         storyLength: storyData.storyLength,
@@ -746,7 +751,94 @@ export default function CreateStoryForm() {
         childPhotoUrl: mainCharacterPhoto?.persistedPhotoUrl ?? undefined,
         childPhotoBase64: mainCharacterPhoto?.uploadedImageBase64 ?? undefined,
         childPhotoMimeType: mainCharacterPhoto?.uploadedImageMimeType ?? undefined,
-      }));
+      };
+      sessionStorage.setItem("heroStorybookDraft", JSON.stringify(draftData));
+
+      // data is the raw API response — contains imageGenerationContext, coverImagePrompt, imagePrompts, story
+      const apiData = data as Record<string, unknown>;
+      const imageGenerationContext = apiData.imageGenerationContext;
+      const coverImagePrompt = apiData.coverImagePrompt;
+      const imagePrompts = Array.isArray(apiData.imagePrompts) ? apiData.imagePrompts as Array<{ pageNumber: number }> : [];
+      const storyData2 = apiData.story;
+
+      // For signed-in users: generate cover + page 1 here, then navigate to /story/[id]
+      if (isSignedIn && imageGenerationContext && coverImagePrompt) {
+        let coverBase64: string | undefined;
+        let page1Base64: string | undefined;
+
+        // Generate cover
+        try {
+          setStageIndex(LOADING_STAGES.length - 4);
+          const coverRes = await fetch("/api/generate-story-images", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageGenerationContext, coverImagePrompt }),
+          });
+          const coverData = await coverRes.json() as { images?: Array<{ imageUrl?: string; isPlaceholder?: boolean }> };
+          const coverImg = coverData.images?.[0];
+          if (coverImg?.imageUrl && !coverImg.isPlaceholder) coverBase64 = coverImg.imageUrl;
+        } catch { /* non-fatal */ }
+
+        // Generate page 1
+        try {
+          setStageIndex(LOADING_STAGES.length - 3);
+          const prompt1 = imagePrompts.find(p => p.pageNumber === 1);
+          if (prompt1 && storyData2) {
+            const p1Res = await fetch("/api/generate-story-images", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ imageGenerationContext, story: storyData2, imagePrompts: [prompt1] }),
+            });
+            const p1Data = await p1Res.json() as { images?: Array<{ imageUrl?: string; isPlaceholder?: boolean }> };
+            const p1Img = p1Data.images?.[0];
+            if (p1Img?.imageUrl && !p1Img.isPlaceholder) page1Base64 = p1Img.imageUrl;
+          }
+        } catch { /* non-fatal */ }
+
+        // Save story with cover + page 1
+        setStageIndex(LOADING_STAGES.length - 2);
+        setLoadingProgress(95);
+        const pageImagesBase64: Record<number, string> = {};
+        if (page1Base64) pageImagesBase64[1] = page1Base64;
+        const story2 = storyData2 as { title?: string; coverText?: string } | undefined;
+
+        const saveRes = await fetch("/api/stories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: story2?.title ?? "",
+            coverText: story2?.coverText ?? "",
+            theme: storyData.selectedTheme ?? "",
+            childName, characterNames, characters,
+            characterPhotos: persistedCharacterPhotos,
+            childPhotoUrl: mainCharacterPhoto?.persistedPhotoUrl,
+            childPhotoBase64: mainCharacterPhoto?.uploadedImageBase64,
+            childPhotoMimeType: mainCharacterPhoto?.uploadedImageMimeType,
+            coverImageBase64: coverBase64,
+            pageImagesBase64,
+            storyJson: storyData2,
+          }),
+        });
+        const saveData = await saveRes.json() as { storyId?: string };
+
+        if (saveData.storyId) {
+          setStageIndex(LOADING_STAGES.length - 1);
+          setLoadingProgress(100);
+          const remainingPrompts = imagePrompts.filter(p => p.pageNumber !== 1);
+          if (remainingPrompts.length > 0) {
+            sessionStorage.setItem("heroStorybookPendingGen", JSON.stringify({
+              storyId: saveData.storyId,
+              imageGenerationContext,
+              story: storyData2,
+              pendingPageNumbers: remainingPrompts.map(p => p.pageNumber),
+            }));
+          }
+          router.push(`/story/${saveData.storyId}`);
+          return;
+        }
+      }
+
+      // Fallback for guests or if save failed: go to story-preview
       router.push("/story-preview");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
