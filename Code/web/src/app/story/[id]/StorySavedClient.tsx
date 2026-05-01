@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import type { StoredStoryData } from "@/types/storybook";
+import type { StoredStoryData, StoryImageGenerationContext, GeneratedStory } from "@/types/storybook";
 
 const ReadingMode = dynamic(() => import("@/components/ReadingMode"), { ssr: false });
 
@@ -38,11 +38,22 @@ function adaptiveTextStyle(text: string): React.CSSProperties {
 
 // ── Page image ────────────────────────────────────────────────────────────────
 
-function PageImage({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+function PageImage({ imageUrl, alt, isGenerating }: { imageUrl?: string; alt: string; isGenerating?: boolean }) {
   if (imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={imageUrl} alt={alt} className="w-full h-full object-cover" />
+    );
+  }
+  if (isGenerating) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[#1a1410]">
+        <svg className="animate-spin w-8 h-8 text-[#FC800A]/50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        <span className="text-xs text-white/25 font-medium">Painting…</span>
+      </div>
     );
   }
   return (
@@ -94,11 +105,13 @@ function StoryPageSection({
   pageNumber,
   pageText,
   imageUrl,
+  isGenerating,
   total,
 }: {
   pageNumber: number;
   pageText: string;
   imageUrl?: string;
+  isGenerating?: boolean;
   total: number;
 }) {
   const imageLeft = pageNumber % 2 !== 0;
@@ -107,7 +120,7 @@ function StoryPageSection({
   const imagePanel = (
     <div className="w-full md:w-[50%] flex-shrink-0 overflow-hidden">
       <div className="w-full aspect-[3/4]">
-        <PageImage imageUrl={imageUrl} alt={`Illustration for page ${pageNumber}`} />
+        <PageImage imageUrl={imageUrl} alt={`Illustration for page ${pageNumber}`} isGenerating={isGenerating} />
       </div>
     </div>
   );
@@ -174,6 +187,13 @@ const GRAIN_SVG = "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+interface PendingGenData {
+  storyId: string;
+  imageGenerationContext: StoryImageGenerationContext;
+  story: GeneratedStory;
+  pendingPageNumbers: number[];
+}
+
 export default function StorySavedClient({ story, isAdmin }: { story: SavedStory; isAdmin?: boolean }) {
   const router = useRouter();
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
@@ -181,6 +201,64 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
   const [regenStatus, setRegenStatus] = useState<"idle" | "done" | "error">("idle");
   const [readingMode, setReadingMode] = useState(false);
   const heroName = story.childName.split(" ")[0];
+
+  // Progressive image generation — picks up where StoryPreviewClient left off
+  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>(() =>
+    Object.fromEntries(Object.entries(story.pageImagesJson).map(([k, v]) => [Number(k), v.imageUrl]))
+  );
+  const [pendingPages, setPendingPages] = useState<Set<number>>(new Set());
+  const hasStartedPendingGen = useRef(false);
+
+  useEffect(() => {
+    if (hasStartedPendingGen.current) return;
+    const raw = sessionStorage.getItem("heroStorybookPendingGen");
+    if (!raw) return;
+
+    let pending: PendingGenData;
+    try { pending = JSON.parse(raw) as PendingGenData; } catch { return; }
+    if (pending.storyId !== story.id) return;
+
+    sessionStorage.removeItem("heroStorybookPendingGen");
+    hasStartedPendingGen.current = true;
+    setPendingPages(new Set(pending.pendingPageNumbers));
+
+    // Generate remaining pages one by one
+    (async () => {
+      for (const pageNum of pending.pendingPageNumbers) {
+        try {
+          const storyPage = pending.story.pages.find(p => p.pageNumber === pageNum);
+          if (!storyPage) continue;
+
+          const res = await fetch("/api/generate-story-images", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageGenerationContext: pending.imageGenerationContext,
+              story: pending.story,
+              imagePrompts: [{ pageNumber: pageNum }],
+            }),
+          });
+          const data = await res.json() as { images?: Array<{ pageNumber: number; imageUrl?: string; isPlaceholder?: boolean }> };
+          const img = data.images?.[0];
+
+          if (img?.imageUrl && !img.isPlaceholder) {
+            // Update local display immediately
+            setGeneratedImages(prev => ({ ...prev, [pageNum]: img.imageUrl! }));
+            // Persist to DB
+            await fetch(`/api/stories/${story.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pageNumber: pageNum, imageBase64: img.imageUrl }),
+            });
+          }
+        } catch {
+          // Non-fatal — page stays as placeholder
+        } finally {
+          setPendingPages(prev => { const next = new Set(prev); next.delete(pageNum); return next; });
+        }
+      }
+    })();
+  }, [story.id]);
 
   const handleRegenerate = async () => {
     if (isRegenerating) return;
@@ -313,7 +391,8 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
               key={page.pageNumber}
               pageNumber={page.pageNumber}
               pageText={page.text}
-              imageUrl={story.pageImagesJson[page.pageNumber]?.imageUrl}
+              imageUrl={generatedImages[page.pageNumber]}
+              isGenerating={pendingPages.has(page.pageNumber)}
               total={story.storyJson.pages.length}
             />
           ))}

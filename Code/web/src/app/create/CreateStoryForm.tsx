@@ -460,7 +460,7 @@ export default function CreateStoryForm() {
         : hasInvalidCharacterAge
         ? "Enter a valid numeric age between 1 and 100 for each character."
         : hasMissingCharacterPhoto
-        ? "Add a separate photo for each character."
+        ? "Please add a photo for each character."
         : "",
     selectedTheme: !storyData.selectedTheme ? "Please choose a story theme." : "",
   };
@@ -1125,12 +1125,12 @@ export default function CreateStoryForm() {
             )}
         </div>
         {photoError && <ValidationError message={photoError} />}
-        <p className="text-xs text-[#020202]/35 flex items-center gap-1.5 md:pl-10">
-          <span aria-hidden="true">🔒</span>
-          {isSignedIn
-            ? "Upload a new photo for each character or reuse photos from your profile library."
-            : "Your photo is used only to generate this story and is never stored."}
-        </p>
+        {!isSignedIn && (
+          <p className="text-xs text-[#020202]/35 flex items-center gap-1.5 md:pl-10">
+            <span aria-hidden="true">🔒</span>
+            Your photo is used only to generate this story and is never stored.
+          </p>
+        )}
       </StoryFormSection>
 
       {/* ② Story theme — larger cards */}

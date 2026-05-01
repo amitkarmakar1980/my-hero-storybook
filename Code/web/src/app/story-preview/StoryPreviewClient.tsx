@@ -410,35 +410,107 @@ export default function StoryPreviewClient() {
         }
         setPageImages(initial);
 
-        try {
-          const results = await fetchPageImages(getDraftImageGenerationContext(data), data.story, data.imagePrompts);
-          if (!isMounted) return;
-          applyImageResults(results);
-        } catch {
-          if (!isMounted) return;
-          setPageImages((prev) => {
-            const next = { ...prev };
-            for (const key of Object.keys(next)) {
-              const n = Number(key);
-              if (next[n].state.status === "loading") {
-                next[n] = { state: { status: "error", error: "Request failed" } };
-              }
-            }
-            return next;
-          });
-        }
+        const context = getDraftImageGenerationContext(data);
 
+        // Phase 1: Cover image first
+        let coverBase64: string | undefined;
         try {
-          const coverResult = await fetchCoverImage(getDraftImageGenerationContext(data), data.coverImagePrompt);
+          const coverResult = await fetchCoverImage(context, data.coverImagePrompt);
           if (!isMounted) return;
           if (coverResult.imageUrl) {
             setCoverImageState({ status: "success", imageUrl: coverResult.imageUrl });
+            coverBase64 = coverResult.imageUrl;
           } else {
             setCoverImageState({ status: "error", error: coverResult.error ?? "Unknown error" });
           }
         } catch {
           if (!isMounted) return;
           setCoverImageState({ status: "error", error: "Cover generation failed" });
+        }
+
+        // Phase 2: Page 1 next
+        const prompt1 = data.imagePrompts.find(p => p.pageNumber === 1);
+        let page1Base64: string | undefined;
+        if (prompt1) {
+          try {
+            const results = await fetchPageImages(context, data.story, [prompt1]);
+            if (!isMounted) return;
+            applyImageResults(results);
+            const r = results[0];
+            if (r?.imageUrl && !r.isPlaceholder) page1Base64 = r.imageUrl;
+          } catch {
+            if (!isMounted) return;
+          }
+        }
+
+        // Phase 3: For signed-in users — save partial story and navigate early
+        const sessionUserId = (window as unknown as { __nextAuthUserId?: string }).__nextAuthUserId;
+        // We check via a fetch instead of useSession to avoid hook dependency
+        const sessionRes = await fetch("/api/auth/session");
+        const sessionData = await sessionRes.json() as { user?: { id?: string } };
+        const userId = sessionData?.user?.id;
+
+        if (userId && (coverBase64 || page1Base64)) {
+          const pageImagesBase64: Record<number, string> = {};
+          if (page1Base64) pageImagesBase64[1] = page1Base64;
+
+          const saveRes = await fetch("/api/stories", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: data.story.title,
+              coverText: data.story.coverText,
+              theme: data.theme ?? "",
+              childName: data.childName,
+              characterNames: data.characterNames,
+              characters: data.characters,
+              characterPhotos: data.characterPhotos,
+              childPhotoUrl: data.childPhotoUrl,
+              childPhotoBase64: data.childPhotoBase64,
+              childPhotoMimeType: data.childPhotoMimeType,
+              coverImageBase64: coverBase64,
+              pageImagesBase64,
+              storyJson: data.story,
+            }),
+          });
+          const saveData = await saveRes.json() as { storyId?: string };
+
+          if (saveData.storyId && isMounted) {
+            // Store remaining pages for StorySavedClient to pick up
+            const remainingPrompts = data.imagePrompts.filter(p => p.pageNumber !== 1);
+            if (remainingPrompts.length > 0) {
+              sessionStorage.setItem("heroStorybookPendingGen", JSON.stringify({
+                storyId: saveData.storyId,
+                imageGenerationContext: context,
+                story: data.story,
+                pendingPageNumbers: remainingPrompts.map(p => p.pageNumber),
+              }));
+            }
+            router.replace(`/story/${saveData.storyId}`);
+            return;
+          }
+        }
+
+        // Fallback for guests or save failure: generate remaining pages here
+        const remainingPrompts = data.imagePrompts.filter(p => p.pageNumber !== 1);
+        if (remainingPrompts.length > 0) {
+          try {
+            const results = await fetchPageImages(context, data.story, remainingPrompts);
+            if (!isMounted) return;
+            applyImageResults(results);
+          } catch {
+            if (!isMounted) return;
+            setPageImages((prev) => {
+              const next = { ...prev };
+              for (const key of Object.keys(next)) {
+                const n = Number(key);
+                if (next[n].state.status === "loading") {
+                  next[n] = { state: { status: "error", error: "Request failed" } };
+                }
+              }
+              return next;
+            });
+          }
         }
       } catch (err) {
         if (process.env.NODE_ENV === "development") console.error("Error in loadData:", err);
@@ -587,15 +659,15 @@ export default function StoryPreviewClient() {
   const { story } = draft;
   const heroName = draft.childName.split(" ")[0];
 
-  const progressMessage = pagesLoaded
-    ? "Painting the cover illustration…"
-    : displayProgress < 25
-    ? "Setting up the canvas…"
-    : displayProgress < 55
-    ? "Painting your illustrations…"
-    : displayProgress < 80
-    ? "Adding fine details…"
-    : "Almost done painting…";
+  const progressMessage =
+    displayProgress < 15 ? "🎨 Waking up the AI artist... it likes coffee"
+    : displayProgress < 28 ? "🖌️ Mixing the perfect shade of adventure"
+    : displayProgress < 40 ? "🦕 Convincing the dinosaurs to sit still"
+    : displayProgress < 52 ? "✨ Sprinkling just the right amount of magic"
+    : displayProgress < 64 ? "🌈 Arguing with the color blue (it won)"
+    : displayProgress < 74 ? "🦄 Shooing away the unicorn photobombers"
+    : displayProgress < 84 ? "🔭 Adding stars that are actually tiny glitter"
+    : "🚀 Almost ready for launch…";
 
   return (
     <>
