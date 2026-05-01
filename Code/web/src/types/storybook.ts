@@ -9,7 +9,10 @@ export type StoryTheme =
   | "Fairy Tale Castle"
   | "Pirate Seas"
   | "Arctic Quest"
-  | "Superhero City";
+  | "Superhero City"
+  | "Enchanted Garden"
+  | "Robot Workshop"
+  | "Cloud Kingdom";
 
 export type StoryTrait = "Brave" | "Curious" | "Funny" | "Kind";
 
