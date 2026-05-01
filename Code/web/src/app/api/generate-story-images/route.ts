@@ -253,8 +253,12 @@ async function _generateValidatedPageImage(
         }),
       ]);
       clearTimeout(timeoutId);
-      const normalizedImage = await normalizeGeneratedImage(generatedImage, normalizationOptions);
-      const imageUrl = `data:${normalizedImage.mimeType};base64,${normalizedImage.data}`;
+      // Imagen returns native-resolution images at the correct aspect ratio — skip sharp to avoid upscale blur.
+      // Only normalize Gemini outputs which may have mismatched dimensions.
+      const finalImage = isImagenModel(model)
+        ? generatedImage
+        : await normalizeGeneratedImage(generatedImage, normalizationOptions);
+      const imageUrl = `data:${finalImage.mimeType};base64,${finalImage.data}`;
       return { pageNumber, imageUrl };
     } catch (err) {
       clearTimeout(timeoutId);
