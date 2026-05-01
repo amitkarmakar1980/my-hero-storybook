@@ -854,6 +854,10 @@ export default function CreateStoryForm() {
     const stage = LOADING_STAGES[stageIndex];
     return (
       <div className="flex flex-col items-center text-center gap-9 py-14 px-4 min-h-[420px] justify-center">
+        <p className="max-w-xl text-sm leading-relaxed text-[#020202]/55">
+          AI image generation takes time. You can come back later to view your story from Your Name &gt; My Profile.
+        </p>
+
         {/* Bouncing stage emoji — key forces re-mount animation on change */}
         <div key={stageIndex} className="text-6xl animate-bounce" aria-hidden="true">
           {stage.emoji}
@@ -884,9 +888,6 @@ export default function CreateStoryForm() {
               }}
             />
           </div>
-          <p className="text-xs text-[#020202]/30 text-right">
-            Takes about 30 seconds
-          </p>
         </div>
 
         {/* Stage dots */}
@@ -1228,9 +1229,9 @@ export default function CreateStoryForm() {
       {/* ② Story theme — larger cards */}
       <StoryFormSection number={2} title="Choose a story world" hint="Once the characters are ready, pick the world for their adventure.">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" role="radiogroup" aria-label="Story theme" aria-required="true">
-          {STORY_THEMES.map((theme) => {
+          {STORY_THEMES.filter((theme) => isSignedIn || !theme.premium).map((theme) => {
             const isSelected = storyData.selectedTheme === theme.label;
-            const isLocked = !!theme.premium && !isSignedIn;
+            const isLocked = false;
             return (
               <button
                 key={theme.label}
@@ -1392,8 +1393,8 @@ export default function CreateStoryForm() {
         {!isLoading && (
           <p className="text-xs text-[#020202]/35 text-center">
             {isSignedIn
-              ? "All 6 story worlds unlocked · Ready in about 30 seconds"
-              : "Sign in to unlock 3 more story worlds · Ready in about 30 seconds"}
+              ? `All ${STORY_THEMES.length} story worlds unlocked`
+              : `Sign in to unlock ${STORY_THEMES.filter(t => t.premium).length} more story worlds`}
           </p>
         )}
       </div>
