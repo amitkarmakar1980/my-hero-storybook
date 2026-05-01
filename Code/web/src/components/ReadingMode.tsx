@@ -55,16 +55,30 @@ function PageImage({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
 function CoverSpread({ page }: { page: Extract<ReadingPage, { type: "cover" }> }) {
   return (
     <div className="w-full h-full flex flex-col md:flex-row">
-      {/* Image — full bleed */}
-      <div className="relative w-full h-[55vw] md:h-full md:w-[60%] flex-shrink-0 overflow-hidden">
-        <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} />
-        {/* Mobile: gradient overlay for title */}
-        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0e0b08] to-transparent md:hidden" />
+
+      {/* ── Mobile: scrollable, image aspect-ratio ── */}
+      <div className="flex flex-col w-full h-full md:hidden overflow-y-auto bg-[#1c1610]">
+        <div className="relative w-full aspect-[16/9] flex-shrink-0 overflow-hidden">
+          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} />
+          <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0e0b08] to-transparent" />
+        </div>
+        <div className="px-8 py-10 text-center">
+          <p className="font-semibold uppercase tracking-[0.4em] text-[#FC800A]/70 mb-5" style={{ fontSize: "clamp(0.6rem, 1.2vw, 0.75rem)" }}>A Story For</p>
+          <h1 className="text-[#f5ede0] leading-tight tracking-[-0.02em] mb-6" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: "clamp(1.6rem, 4vw, 3rem)" }}>{page.title}</h1>
+          <div className="w-12 h-px bg-[#FC800A]/40 mx-auto mb-6" />
+          <p className="text-[#c4ad92] leading-relaxed" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: "clamp(0.9rem, 1.8vw, 1.15rem)", lineHeight: 1.85 }}>{page.coverText}</p>
+        </div>
       </div>
 
-      {/* Text panel */}
-      <div className="flex-1 flex flex-col items-center justify-center overflow-hidden bg-[#1c1610]">
-        <div className="w-full h-full overflow-y-auto flex flex-col items-center justify-center px-8 py-10 md:px-14 md:py-16">
+      {/* ── Desktop: side-by-side panels ── */}
+      <div className="hidden md:flex w-full h-full">
+        {/* Image */}
+        <div className="relative w-[60%] flex-shrink-0 overflow-hidden">
+          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} />
+        </div>
+        {/* Text panel */}
+        <div className="flex-1 flex flex-col items-center justify-center overflow-hidden bg-[#1c1610]">
+        <div className="w-full h-full overflow-y-auto flex flex-col items-center justify-center px-14 py-16">
           <div className="max-w-sm text-center w-full">
             <p className="font-semibold uppercase tracking-[0.4em] text-[#FC800A]/70 mb-6" style={{ fontSize: "clamp(0.6rem, 1.2vw, 0.75rem)" }}>A Story For</p>
             <h1
@@ -82,7 +96,9 @@ function CoverSpread({ page }: { page: Extract<ReadingPage, { type: "cover" }> }
             </p>
           </div>
         </div>
+        </div>
       </div>
+
     </div>
   );
 }
@@ -94,9 +110,9 @@ function storyLayout(text: string): {
   maxWidth: string;      // text container max-width
 } {
   const len = text.length;
-  if (len < 200) return { fontSize: "clamp(1.5rem, 3.2vw, 2.1rem)",   lineHeight: 2.1, imageWidthPct: 55, maxWidth: "22rem" };
-  if (len < 400) return { fontSize: "clamp(1.25rem, 2.6vw, 1.65rem)", lineHeight: 2.0, imageWidthPct: 50, maxWidth: "28rem" };
-  return              { fontSize: "clamp(1.05rem, 2.1vw, 1.35rem)",  lineHeight: 1.9, imageWidthPct: 44, maxWidth: "36rem" };
+  if (len < 200) return { fontSize: "clamp(1.5rem, 3.2vw, 2.1rem)",   lineHeight: 2.1, imageWidthPct: 52, maxWidth: "26rem" };
+  if (len < 400) return { fontSize: "clamp(1.25rem, 2.6vw, 1.65rem)", lineHeight: 2.0, imageWidthPct: 46, maxWidth: "34rem" };
+  return              { fontSize: "clamp(1.05rem, 2.1vw, 1.35rem)",  lineHeight: 1.9, imageWidthPct: 38, maxWidth: "48rem" };
 }
 
 function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "story" }>; index: number }) {
@@ -104,35 +120,15 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
   const { fontSize, lineHeight, imageWidthPct, maxWidth } = storyLayout(page.text);
   const imageWidthStyle = `${imageWidthPct}%`;
 
-  const imagePanel = (
-    <div
-      className="w-full flex-shrink-0 overflow-hidden"
-      style={{ height: "55vw" }}
-    >
-      <div className="hidden md:block w-full h-full" style={{ width: imageWidthStyle }}>
-        <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
-      </div>
-      <div className="md:hidden w-full h-full">
-        <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
-      </div>
-    </div>
-  );
-
   const imageDesktopPanel = (
     <div className="flex-shrink-0 overflow-hidden h-full" style={{ width: imageWidthStyle }}>
       <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
     </div>
   );
 
-  const imageMobilePanel = (
-    <div className="w-full flex-shrink-0 overflow-hidden" style={{ height: "55vw" }}>
-      <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
-    </div>
-  );
-
-  const textPanel = (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#1c1610]">
-      <div className="flex-1 overflow-y-auto flex flex-col justify-center px-6 py-8 md:px-10 md:py-14">
+  const desktopTextPanel = (
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#1c1610] min-w-0">
+      <div className="flex-1 overflow-y-auto flex flex-col justify-center px-10 py-14">
         <div className="mx-auto w-full" style={{ maxWidth }}>
           <p
             className="text-[#e8d8c4]"
@@ -152,15 +148,30 @@ function StorySpread({ page, index }: { page: Extract<ReadingPage, { type: "stor
 
   return (
     <div className="w-full h-full flex flex-col md:flex-row">
-      {/* Mobile: always image first */}
-      <div className="flex flex-col w-full h-full md:hidden">
-        {imageMobilePanel}
-        {textPanel}
+
+      {/* ── Mobile: natural scroll, image aspect-ratio, text flows below ── */}
+      <div className="flex flex-col w-full h-full md:hidden overflow-y-auto bg-[#1c1610]">
+        <div className="w-full aspect-[3/4] flex-shrink-0 overflow-hidden">
+          <PageImage imageUrl={page.imageUrl} alt={`Illustration for page ${page.pageNumber}`} />
+        </div>
+        <div className="px-6 py-8 flex-1">
+          <p
+            className="text-[#e8d8c4]"
+            style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize, lineHeight }}
+          >
+            {page.text}
+          </p>
+          <p className="mt-6 text-[#FC800A]/40 font-medium tracking-widest text-right text-xs">
+            {page.pageNumber} / {6}
+          </p>
+        </div>
       </div>
-      {/* Desktop: alternate sides, dynamic split */}
+
+      {/* ── Desktop: fixed split panels ── */}
       <div className="hidden md:flex w-full h-full">
-        {imageLeft ? <>{imageDesktopPanel}{textPanel}</> : <>{textPanel}{imageDesktopPanel}</>}
+        {imageLeft ? <>{imageDesktopPanel}{desktopTextPanel}</> : <>{desktopTextPanel}{imageDesktopPanel}</>}
       </div>
+
       {/* Spine shadow */}
       <div
         className="hidden md:block absolute inset-y-0 pointer-events-none"

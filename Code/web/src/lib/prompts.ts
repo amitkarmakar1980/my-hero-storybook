@@ -555,6 +555,7 @@ Requirements:
 - Do not omit any named character from the 6-page story
 - The way each character behaves, speaks, and is described must fit their exact age
 - Story moments should feel plausible for these exact ages while still being magical and adventurous
+- NEVER mention any character's age explicitly in the story text — no phrases like "5-year-old", "aged 7", "who was 6", etc. Age is used only to calibrate behaviour and vocabulary, not to be stated in the narrative
 - Tone is warm, playful, magical, and safe
 - Structure: delightful beginning, small challenge, happy ending
 - ${buildStoryLengthRequirements(input).replace(/\n/g, "\n- ")}
@@ -598,6 +599,8 @@ Improve this story for:
 - lower repetition
 - exact age fit for every named character
 - matching the requested page length for a ${getStoryLength(input)} story
+
+Remove any explicit age references — do not include phrases like "5-year-old", "aged 7", "who was 6" or any numeric age mention in the story text. Age shapes behaviour and vocabulary only.
 
 Keep:
 - same title
