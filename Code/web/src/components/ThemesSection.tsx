@@ -1,6 +1,6 @@
 import { STORY_THEMES, type StoryThemeConfig } from "@/lib/storyThemes";
 
-function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
+function StoryThemeCard({ theme, isLocked }: { theme: StoryThemeConfig; isLocked: boolean }) {
   return (
     <article
       className="group relative overflow-hidden rounded-3xl flex flex-col text-left
@@ -94,7 +94,7 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
         </div>
 
         {/* Sign-in badge */}
-        {theme.premium && (
+        {isLocked && (
           <span
             className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1
                        text-[10px] font-bold uppercase tracking-wide
@@ -133,7 +133,7 @@ function StoryThemeCard({ theme }: { theme: StoryThemeConfig }) {
   );
 }
 
-export default function ThemesSection() {
+export default function ThemesSection({ isSignedIn = false }: { isSignedIn?: boolean }) {
   const freeThemes = STORY_THEMES.filter((t) => !t.premium);
   const premiumThemes = STORY_THEMES.filter((t) => t.premium);
 
@@ -165,7 +165,7 @@ export default function ThemesSection() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {freeThemes.map((theme) => (
-              <StoryThemeCard key={theme.label} theme={theme} />
+              <StoryThemeCard key={theme.label} theme={theme} isLocked={false} />
             ))}
           </div>
         </div>
@@ -174,13 +174,13 @@ export default function ThemesSection() {
         <div>
           <div className="flex items-center gap-3 mb-5">
             <span className="text-xs font-bold uppercase tracking-widest text-[#FC800A]/70">
-              🔐 Sign in to unlock
+              {isSignedIn ? "✨ Premium · unlocked" : "🔐 Sign in to unlock"}
             </span>
             <div className="flex-1 h-px bg-[#FC800A]/20" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {premiumThemes.map((theme) => (
-              <StoryThemeCard key={theme.label} theme={theme} />
+              <StoryThemeCard key={theme.label} theme={theme} isLocked={!isSignedIn} />
             ))}
           </div>
         </div>
