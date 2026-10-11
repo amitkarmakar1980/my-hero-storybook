@@ -1,0 +1,47 @@
+{
+  "$comment": "Image eval fixtures. referencePhoto paths are relative to Code/web. Use stand-in or consented photos only — never real customer photos.",
+  "cases": [
+    {
+      "id": "forest-fireflies",
+      "referencePhoto": "scripts/eval/fixtures/maya-standin.png",
+      "illustrationStyle": "classic-storybook",
+      "title": "Maya and the Firefly Forest",
+      "character": {
+        "characterName": "Maya",
+        "characterDescription": "A cheerful six-year-old girl with voluminous curly dark hair",
+        "styleNotes": "Warm, soft storybook rendering",
+        "recurringVisualAnchors": ["yellow raincoat", "curly dark hair"],
+        "exactAge": 6,
+        "hair": "voluminous, shoulder-length curly dark brown hair",
+        "skinTone": "light olive",
+        "defaultOutfit": "yellow raincoat over a striped shirt, red rain boots"
+      },
+      "pages": [
+        "Maya followed the glowing fireflies into the whispering forest, her red boots splashing through puddles that sparkled like stars.",
+        "Deep in the woods, a tiny owl with spectacles waved at Maya from a mossy branch and hooted a friendly hello.",
+        "Maya and the owl shared berries on a toadstool while the fireflies danced in loops above their heads."
+      ]
+    },
+    {
+      "id": "space-watercolor",
+      "referencePhoto": "scripts/eval/fixtures/maya-standin.png",
+      "illustrationStyle": "watercolor",
+      "title": "Maya's Moon Picnic",
+      "character": {
+        "characterName": "Maya",
+        "characterDescription": "A cheerful six-year-old girl with voluminous curly dark hair",
+        "styleNotes": "Loose watercolor washes",
+        "recurringVisualAnchors": ["silver space suit", "curly dark hair"],
+        "exactAge": 6,
+        "hair": "voluminous, shoulder-length curly dark brown hair",
+        "skinTone": "light olive",
+        "defaultOutfit": "silver space suit with an orange star patch"
+      },
+      "pages": [
+        "Maya's cardboard rocket rumbled, wobbled, and then zoomed straight up past the clouds toward the big round moon.",
+        "On the moon, Maya bounced in giant slow-motion hops while a friendly alien family set out a picnic blanket.",
+        "Maya waved goodbye from her rocket window as Earth glowed blue and green below her."
+      ]
+    }
+  ]
+}

@@ -1117,6 +1117,7 @@ export default function CreateStoryForm({ isAdmin = false }: { isAdmin?: boolean
             coverImageBase64: coverBase64,
             pageImagesBase64,
             storyJson: storyData2,
+            imageGenerationContext,
           }),
         });
         const saveData = await saveRes.json() as { storyId?: string };
@@ -1124,15 +1125,7 @@ export default function CreateStoryForm({ isAdmin = false }: { isAdmin?: boolean
         if (saveData.storyId) {
           setStageIndex(LOADING_STAGES.length - 1);
           setLoadingProgress(100);
-          const remainingPrompts = imagePrompts.filter(p => p.pageNumber !== 1);
-          if (remainingPrompts.length > 0) {
-            sessionStorage.setItem("heroStorybookPendingGen", JSON.stringify({
-              storyId: saveData.storyId,
-              imageGenerationContext,
-              story: storyData2,
-              pendingPageNumbers: remainingPrompts.map(p => p.pageNumber),
-            }));
-          }
+          // The story page fills any missing images server-side.
           router.push(`/story/${saveData.storyId}`);
           return;
         }

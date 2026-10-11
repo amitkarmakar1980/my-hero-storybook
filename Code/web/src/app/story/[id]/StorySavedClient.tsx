@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
-import type { StoredStoryData, StoryImageGenerationContext, GeneratedStory } from "@/types/storybook";
+import type { StoredStoryData } from "@/types/storybook";
 import { formatStoryText } from "@/lib/formatStoryText";
 
 const ReadingMode = dynamic(() => import("@/components/ReadingMode"), { ssr: false });
@@ -39,11 +39,27 @@ function adaptiveTextStyle(text: string): React.CSSProperties {
 
 // ── Page image ────────────────────────────────────────────────────────────────
 
-function PageImage({ imageUrl, alt, isGenerating }: { imageUrl?: string; alt: string; isGenerating?: boolean }) {
+function PageImage({
+  imageUrl,
+  alt,
+  isGenerating,
+  failed,
+  onRetry,
+  fitMode,
+}: {
+  imageUrl?: string;
+  alt: string;
+  isGenerating?: boolean;
+  failed?: boolean;
+  onRetry?: () => void;
+  fitMode?: "cover" | "contain";
+}) {
+  const resolvedFitMode = fitMode ?? "cover";
+
   if (imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={imageUrl} alt={alt} className="w-full h-full object-cover" />
+      <img src={imageUrl} alt={alt} className={`w-full h-full bg-[#120f0a] ${resolvedFitMode === "contain" ? "object-contain" : "object-cover"}`} />
     );
   }
   if (isGenerating) {
@@ -57,6 +73,23 @@ function PageImage({ imageUrl, alt, isGenerating }: { imageUrl?: string; alt: st
       </div>
     );
   }
+  if (failed && onRetry) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-[#1a1410] px-6 text-center">
+        <span className="text-4xl opacity-20" aria-hidden="true">🎨</span>
+        <span className="text-xs text-white/40 font-medium">We couldn&apos;t paint this illustration.</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-full bg-[#FC800A]/90 px-4 py-1.5 text-xs font-semibold text-white
+                     hover:bg-[#FC800A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                     active:scale-[0.97] transition-[transform,background-color] duration-200"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="w-full h-full flex items-center justify-center bg-[#1a1410]">
       <span className="text-5xl opacity-10">🎨</span>
@@ -66,12 +99,26 @@ function PageImage({ imageUrl, alt, isGenerating }: { imageUrl?: string; alt: st
 
 // ── Cover spread ──────────────────────────────────────────────────────────────
 
-function CoverSection({ title, coverText, imageUrl }: { title: string; coverText: string; imageUrl?: string }) {
+function CoverSection({
+  title,
+  coverText,
+  imageUrl,
+  isGenerating,
+  failed,
+  onRetry,
+}: {
+  title: string;
+  coverText: string;
+  imageUrl?: string;
+  isGenerating?: boolean;
+  failed?: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <section className="relative w-full min-h-[100svh] flex flex-col md:flex-row">
       {/* Image — full bleed left panel on desktop, top on mobile */}
       <div className="relative w-full aspect-[16/9] md:aspect-auto md:w-[58%] md:h-auto flex-shrink-0 overflow-hidden">
-        <PageImage imageUrl={imageUrl} alt={`Cover of ${title}`} />
+        <PageImage imageUrl={imageUrl} alt={`Cover of ${title}`} fitMode="contain" isGenerating={isGenerating} failed={failed} onRetry={onRetry} />
         <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-[#0e0b08] to-transparent" />
       </div>
 
@@ -107,12 +154,16 @@ function StoryPageSection({
   pageText,
   imageUrl,
   isGenerating,
+  failed,
+  onRetry,
   total,
 }: {
   pageNumber: number;
   pageText: string;
   imageUrl?: string;
   isGenerating?: boolean;
+  failed?: boolean;
+  onRetry?: () => void;
   total: number;
 }) {
   const imageLeft = pageNumber % 2 !== 0;
@@ -121,7 +172,7 @@ function StoryPageSection({
   const imagePanel = (
     <div className="w-full md:w-[50%] flex-shrink-0 overflow-hidden">
       <div className="w-full aspect-[3/4]">
-        <PageImage imageUrl={imageUrl} alt={`Illustration for page ${pageNumber}`} isGenerating={isGenerating} />
+        <PageImage imageUrl={imageUrl} alt={`Illustration for page ${pageNumber}`} isGenerating={isGenerating} failed={failed} onRetry={onRetry} />
       </div>
     </div>
   );
@@ -193,14 +244,18 @@ const GRAIN_SVG = "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-interface PendingGenData {
-  storyId: string;
-  imageGenerationContext: StoryImageGenerationContext;
-  story: GeneratedStory;
-  pendingPageNumbers: number[];
-}
+type ImageTarget = "cover" | number;
+const targetKey = (target: ImageTarget) => String(target);
 
-export default function StorySavedClient({ story, isAdmin }: { story: SavedStory; isAdmin?: boolean }) {
+export default function StorySavedClient({
+  story,
+  isAdmin,
+  isOwner,
+}: {
+  story: SavedStory;
+  isAdmin?: boolean;
+  isOwner?: boolean;
+}) {
   const router = useRouter();
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -208,63 +263,55 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
   const [readingMode, setReadingMode] = useState(false);
   const heroName = story.childName.split(" ")[0];
 
-  // Progressive image generation — picks up where StoryPreviewClient left off
+  // Images fill in progressively: anything missing is generated server-side
+  // via /api/stories/[id]/images, one target at a time.
+  const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>(story.coverImageUrl);
   const [generatedImages, setGeneratedImages] = useState<Record<number, string>>(() =>
     Object.fromEntries(Object.entries(story.pageImagesJson).map(([k, v]) => [Number(k), v.imageUrl]))
   );
-  const [pendingPages, setPendingPages] = useState<Set<number>>(new Set());
-  const hasStartedPendingGen = useRef(false);
+  const [pendingTargets, setPendingTargets] = useState<Set<string>>(new Set());
+  const [failedTargets, setFailedTargets] = useState<Set<string>>(new Set());
+  const hasStartedAutoFill = useRef(false);
 
-  useEffect(() => {
-    if (hasStartedPendingGen.current) return;
-    const raw = sessionStorage.getItem("heroStorybookPendingGen");
-    if (!raw) return;
+  const fillImages = useCallback(async (targets: ImageTarget[]) => {
+    const keys = targets.map(targetKey);
+    setPendingTargets(prev => new Set([...prev, ...keys]));
+    setFailedTargets(prev => { const next = new Set(prev); keys.forEach(k => next.delete(k)); return next; });
 
-    let pending: PendingGenData;
-    try { pending = JSON.parse(raw) as PendingGenData; } catch { return; }
-    if (pending.storyId !== story.id) return;
-
-    sessionStorage.removeItem("heroStorybookPendingGen");
-    hasStartedPendingGen.current = true;
-    setPendingPages(new Set(pending.pendingPageNumbers));
-
-    // Generate remaining pages one by one
-    (async () => {
-      for (const pageNum of pending.pendingPageNumbers) {
-        try {
-          const storyPage = pending.story.pages.find(p => p.pageNumber === pageNum);
-          if (!storyPage) continue;
-
-          const res = await fetch("/api/generate-story-images", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageGenerationContext: pending.imageGenerationContext,
-              story: pending.story,
-              imagePrompts: [{ pageNumber: pageNum }],
-            }),
-          });
-          const data = await res.json() as { images?: Array<{ pageNumber: number; imageUrl?: string; isPlaceholder?: boolean }> };
-          const img = data.images?.[0];
-
-          if (img?.imageUrl && !img.isPlaceholder) {
-            // Update local display immediately
-            setGeneratedImages(prev => ({ ...prev, [pageNum]: img.imageUrl! }));
-            // Persist to DB
-            await fetch(`/api/stories/${story.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ pageNumber: pageNum, imageBase64: img.imageUrl }),
-            });
-          }
-        } catch {
-          // Non-fatal — page stays as placeholder
-        } finally {
-          setPendingPages(prev => { const next = new Set(prev); next.delete(pageNum); return next; });
-        }
+    for (const target of targets) {
+      const key = targetKey(target);
+      try {
+        const res = await fetch(`/api/stories/${story.id}/images`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target }),
+        });
+        const data = await res.json() as { imageUrl?: string };
+        if (!res.ok || !data.imageUrl) throw new Error(`HTTP ${res.status}`);
+        if (target === "cover") setCoverImageUrl(data.imageUrl);
+        else setGeneratedImages(prev => ({ ...prev, [target]: data.imageUrl! }));
+      } catch {
+        setFailedTargets(prev => new Set(prev).add(key));
+      } finally {
+        setPendingTargets(prev => { const next = new Set(prev); next.delete(key); return next; });
       }
-    })();
+    }
   }, [story.id]);
+
+  const missingTargets: ImageTarget[] = [
+    ...(coverImageUrl ? [] : ["cover" as const]),
+    ...story.storyJson.pages.map(p => p.pageNumber).filter(n => !generatedImages[n]),
+  ];
+  const retryableTargets = missingTargets.filter(t => !pendingTargets.has(targetKey(t)));
+
+  // Owners auto-fill on open (fresh stories and older ones with gaps);
+  // admins viewing someone else's story use the retry controls instead.
+  useEffect(() => {
+    if (hasStartedAutoFill.current || !isOwner || missingTargets.length === 0) return;
+    hasStartedAutoFill.current = true;
+    void fillImages(missingTargets);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, fillImages]);
 
   const handleRegenerate = async () => {
     if (isRegenerating) return;
@@ -294,8 +341,10 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
         title: story.title,
         coverText: story.coverText,
         story: story.storyJson,
-        coverImageUrl: story.coverImageUrl,
-        pageImages: story.pageImagesJson,
+        coverImageUrl,
+        pageImages: Object.fromEntries(
+          Object.entries(generatedImages).map(([k, url]) => [Number(k), { imageUrl: url }])
+        ),
       });
     } finally {
       setIsPdfGenerating(false);
@@ -309,7 +358,7 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
           title={story.title}
           coverText={story.coverText}
           heroName={heroName}
-          coverImageUrl={story.coverImageUrl}
+          coverImageUrl={coverImageUrl}
           storyJson={story.storyJson}
           pageImagesJson={Object.fromEntries(
             Object.entries(generatedImages).map(([k, url]) => [Number(k), { imageUrl: url }])
@@ -361,6 +410,19 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
               </div>
             )}
 
+            {/* Paint everything still missing (after failures, or for admins) */}
+            {retryableTargets.length > 0 && (failedTargets.size > 0 || !isOwner) && (
+              <button
+                type="button"
+                onClick={() => fillImages(retryableTargets)}
+                className="flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-medium text-white/70
+                           focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FC800A]
+                           active:scale-[0.97] transition-[transform,background-color] duration-200"
+              >
+                ↻ Paint missing ({retryableTargets.length})
+              </button>
+            )}
+
             {/* Reading mode button — desktop only */}
             <button
               type="button"
@@ -391,7 +453,10 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
           <CoverSection
             title={story.title}
             coverText={story.coverText}
-            imageUrl={story.coverImageUrl}
+            imageUrl={coverImageUrl}
+            isGenerating={pendingTargets.has("cover")}
+            failed={failedTargets.has("cover") || (!isOwner && !coverImageUrl)}
+            onRetry={() => fillImages(["cover"])}
           />
 
           {story.storyJson.pages.map((page) => (
@@ -400,7 +465,9 @@ export default function StorySavedClient({ story, isAdmin }: { story: SavedStory
               pageNumber={page.pageNumber}
               pageText={page.text}
               imageUrl={generatedImages[page.pageNumber]}
-              isGenerating={pendingPages.has(page.pageNumber)}
+              isGenerating={pendingTargets.has(targetKey(page.pageNumber))}
+              failed={failedTargets.has(targetKey(page.pageNumber)) || (!isOwner && !generatedImages[page.pageNumber])}
+              onRetry={() => fillImages([page.pageNumber])}
               total={story.storyJson.pages.length}
             />
           ))}

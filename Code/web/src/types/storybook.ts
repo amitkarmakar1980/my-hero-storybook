@@ -99,6 +99,21 @@ export interface StoredStoryData extends GeneratedStory {
   characters?: StoryCharacterInput[];
   characterPhotos?: PersistedCharacterPhoto[];
   illustrationStyle?: IllustrationStyle;
+  /** Lets the server generate missing images later without the browser session. */
+  imageGenerationContext?: StoredImageGenerationContext;
+}
+
+/** StoryImageGenerationContext without photo bytes (photos live in storage). */
+export type StoredImageGenerationContext = Omit<StoryImageGenerationContext, "characterPhotos">;
+
+/** One entry of Story.pageImagesJson. */
+export interface StoredPageImage {
+  imageUrl: string;
+  quality?: {
+    passed: boolean;
+    scores?: { likeness: number; sceneMatch: number; styleMatch: number };
+    flags: string[];
+  };
 }
 
 export interface PageImagePrompt {

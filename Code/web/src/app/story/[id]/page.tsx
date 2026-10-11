@@ -23,6 +23,7 @@ export default async function SavedStoryPage({
   return (
     <StorySavedClient
       isAdmin={isAdmin}
+      isOwner={story.userId === session.user.id}
       story={{
         id: story.id,
         title: story.title,

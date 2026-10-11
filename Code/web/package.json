@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "test:image": "node ./test-gemini-image-api.js"
+    "test:image": "node ./test-gemini-image-api.js",
+    "eval:images": "npx --yes tsx --tsconfig tsconfig.json scripts/eval-images.mts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

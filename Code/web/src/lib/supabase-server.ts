@@ -49,11 +49,18 @@ export async function uploadBase64Image(
   const base64 = matches[2];
   const buffer = Buffer.from(base64, "base64");
 
-  const { error } = await supabase.storage.from(bucket).upload(path, buffer, {
-    contentType: mimeType,
-    upsert: true,
-  });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+  // Retry transient storage failures (cold project, network blips) before giving up.
+  const MAX_UPLOAD_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const { error } = await supabase.storage.from(bucket).upload(path, buffer, {
+      contentType: mimeType,
+      upsert: true,
+    });
+    if (!error) break;
+    console.error(`[storage] upload ${bucket}/${path} attempt=${attempt}/${MAX_UPLOAD_ATTEMPTS}: ${error.message}`);
+    if (attempt >= MAX_UPLOAD_ATTEMPTS) throw new Error(`Storage upload failed: ${error.message}`);
+    await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+  }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;

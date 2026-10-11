@@ -4,6 +4,7 @@ import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
 import { isAdminEmail } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { uploadBase64Image } from "@/lib/supabase-server";
+import { getMissingImageTargets, toStoredGenerationContext } from "@/lib/storyImages";
 import type {
   CharacterPhotoInput,
   GeneratedStory,
@@ -11,6 +12,7 @@ import type {
   PersistedCharacterPhoto,
   StoryCharacterInput,
   StoredStoryData,
+  StoryImageGenerationContext,
 } from "@/types/storybook";
 
 interface SaveStoryRequest {
@@ -28,6 +30,8 @@ interface SaveStoryRequest {
   coverImageBase64?: string;
   pageImagesBase64: Record<number, string>;
   storyJson: GeneratedStory;
+  /** Persisted (minus photo bytes) so the server can fill missing images later. */
+  imageGenerationContext?: StoryImageGenerationContext;
 }
 
 function normalizePhotoDataUrl(photoBase64: string, mimeType?: string) {
@@ -154,6 +158,7 @@ export async function POST(request: NextRequest) {
     coverImageBase64,
     pageImagesBase64,
     storyJson,
+    imageGenerationContext,
   } = body;
 
   const userId = session.user.id;
@@ -203,8 +208,9 @@ export async function POST(request: NextRequest) {
         `${userId}/${timestamp}/cover.jpg`,
         coverImageBase64
       );
-    } catch {
-      // Non-fatal — save story without cover image
+    } catch (err) {
+      // Non-fatal — the story page fills missing images via /api/stories/[id]/images
+      console.error("[stories] cover upload failed:", err instanceof Error ? err.message : err);
     }
   }
 
@@ -220,8 +226,8 @@ export async function POST(request: NextRequest) {
         base64
       );
       pageImagesJson[pageNum] = { imageUrl: url };
-    } catch {
-      // Skip failed page images
+    } catch (err) {
+      console.error(`[stories] page ${pageNum} upload failed:`, err instanceof Error ? err.message : err);
     }
   }
 
@@ -238,6 +244,14 @@ export async function POST(request: NextRequest) {
     characters,
     characterPhotos: persistedCharacterPhotos,
     illustrationStyle: normalizedIllustrationStyle,
+    ...(imageGenerationContext?.characterProfiles?.length
+      ? {
+          imageGenerationContext: toStoredGenerationContext({
+            ...imageGenerationContext,
+            illustrationStyle: normalizedIllustrationStyle,
+          }),
+        }
+      : {}),
   };
 
   const story = await prisma.story.create({
@@ -254,5 +268,9 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ storyId: story.id, thumbnailUrl: persistedThumbnailUrl });
+  return NextResponse.json({
+    storyId: story.id,
+    thumbnailUrl: persistedThumbnailUrl,
+    missingImages: getMissingImageTargets(story),
+  });
 }

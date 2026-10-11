@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { DEFAULT_ILLUSTRATION_STYLE } from "@/lib/illustrationStyles";
-import { isAdminEmail } from "@/lib/config";
+import { getTextModel, isAdminEmail } from "@/lib/config";
 import {
   buildCharacterProfilePrompt,
   buildCoverImagePromptFromContext,
@@ -20,8 +20,6 @@ import type {
   StoryImageGenerationContext,
 } from "@/types/storybook";
 
-const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.5-flash";
-
 interface GeminiTextResponse {
   candidates?: Array<{
     content?: {
@@ -32,17 +30,116 @@ interface GeminiTextResponse {
   }>;
 }
 
+interface GeminiResponseSchema {
+  type: "OBJECT" | "ARRAY" | "STRING" | "INTEGER" | "NUMBER" | "BOOLEAN";
+  properties?: Record<string, GeminiResponseSchema>;
+  items?: GeminiResponseSchema;
+  required?: string[];
+  propertyOrdering?: string[];
+  minItems?: number;
+  maxItems?: number;
+}
+
+const CHARACTER_PROFILE_RESPONSE_SCHEMA: GeminiResponseSchema = {
+  type: "OBJECT",
+  propertyOrdering: [
+    "characterName",
+    "characterDescription",
+    "styleNotes",
+    "recurringVisualAnchors",
+    "exactAge",
+    "appearanceAge",
+    "faceShape",
+    "skinTone",
+    "hair",
+    "eyes",
+    "build",
+    "signatureFeatures",
+    "defaultOutfit",
+  ],
+  required: [
+    "characterName",
+    "characterDescription",
+    "styleNotes",
+    "recurringVisualAnchors",
+    "exactAge",
+    "appearanceAge",
+    "faceShape",
+    "skinTone",
+    "hair",
+    "eyes",
+    "build",
+    "signatureFeatures",
+    "defaultOutfit",
+  ],
+  properties: {
+    characterName: { type: "STRING" },
+    characterDescription: { type: "STRING" },
+    styleNotes: { type: "STRING" },
+    recurringVisualAnchors: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      minItems: 1,
+    },
+    exactAge: { type: "INTEGER" },
+    appearanceAge: { type: "STRING" },
+    faceShape: { type: "STRING" },
+    skinTone: { type: "STRING" },
+    hair: { type: "STRING" },
+    eyes: { type: "STRING" },
+    build: { type: "STRING" },
+    signatureFeatures: { type: "STRING" },
+    defaultOutfit: { type: "STRING" },
+  },
+};
+
+function buildGeneratedStoryResponseSchema(pageCount: number): GeminiResponseSchema {
+  return {
+    type: "OBJECT",
+    propertyOrdering: ["title", "coverText", "pages", "ending"],
+    required: ["title", "coverText", "pages", "ending"],
+    properties: {
+      title: { type: "STRING" },
+      coverText: { type: "STRING" },
+      pages: {
+        type: "ARRAY",
+        minItems: pageCount,
+        maxItems: pageCount,
+        items: {
+          type: "OBJECT",
+          propertyOrdering: ["pageNumber", "text"],
+          required: ["pageNumber", "text"],
+          properties: {
+            pageNumber: { type: "INTEGER" },
+            text: { type: "STRING" },
+          },
+        },
+      },
+      ending: { type: "STRING" },
+    },
+  };
+}
+
 function safeJsonParse<T>(text: string): T {
   // Gemini sometimes wraps responses in markdown code fences — strip them before parsing.
   const cleaned = text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
-  return JSON.parse(cleaned) as T;
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (error) {
+    const excerpt = cleaned.slice(0, 1000);
+    throw new Error(
+      `Failed to parse Gemini JSON response: ${error instanceof Error ? error.message : String(error)}. Response excerpt: ${excerpt}`
+    );
+  }
 }
 
 async function generateJson<T>(
   prompt: string,
+  responseSchema: GeminiResponseSchema,
   imageBase64?: string,
   imageMimeType?: string
 ): Promise<T> {
@@ -78,12 +175,13 @@ async function generateJson<T>(
     ],
     generationConfig: {
       responseMimeType: "application/json",
+      responseSchema,
     },
   };
 
   console.log("Calling Gemini API with request body...");
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${getTextModel()}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,6 +328,7 @@ export async function POST(request: NextRequest) {
             characterPhoto.characterName,
             normalizedCharacterNames
           ),
+          CHARACTER_PROFILE_RESPONSE_SCHEMA,
           characterPhoto.uploadedImageBase64,
           characterPhoto.uploadedImageMimeType
         );
@@ -242,11 +341,13 @@ export async function POST(request: NextRequest) {
     );
 
     const storyDraft = await generateJson<GeneratedStory>(
-      buildStoryGenerationPrompt(normalizedInput, characterProfiles)
+      buildStoryGenerationPrompt(normalizedInput, characterProfiles),
+      buildGeneratedStoryResponseSchema(pageCount)
     );
 
     const refinedStory = await generateJson<GeneratedStory>(
-      buildStoryRefinementPrompt(JSON.stringify(storyDraft), normalizedInput)
+      buildStoryRefinementPrompt(JSON.stringify(storyDraft), normalizedInput),
+      buildGeneratedStoryResponseSchema(pageCount)
     );
 
     const imagePrompts: PageImagePrompt[] = refinedStory.pages.map((p) => ({
@@ -285,12 +386,20 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (process.env.NODE_ENV === "development") {
-      console.error("generate-storybook error:", errorMessage);
-    }
+    console.error("generate-storybook error:", errorMessage);
+
+    const isQuotaError =
+      errorMessage.includes("429") ||
+      errorMessage.toLowerCase().includes("quota") ||
+      errorMessage.toLowerCase().includes("rate");
+
+    const userFacingMessage = isQuotaError
+      ? "Story generation is temporarily unavailable due to high demand. Please try again in a few minutes."
+      : "Something went wrong generating your story. Please try again.";
+
     return NextResponse.json(
-      { error: `Failed to generate storybook: ${errorMessage}` },
-      { status: 500 }
+      { error: userFacingMessage },
+      { status: isQuotaError ? 429 : 500 }
     );
   }
 }

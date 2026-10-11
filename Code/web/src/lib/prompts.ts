@@ -200,47 +200,6 @@ export function buildSharedImageGenerationContext(
   return [buildBaseStylePrompt(illustrationStyle), "", buildCharacterAnchor(profile)].join("\n");
 }
 
-export function buildImagenCharacterDescription(profile: CharacterProfile): string {
-  const parts = [
-    profile.exactAge && `${profile.exactAge}-year-old`,
-    profile.skinTone,
-    profile.faceShape ? `face with ${profile.faceShape}` : null,
-    profile.hair,
-    profile.eyes ? `${profile.eyes}` : null,
-    profile.build,
-    profile.signatureFeatures,
-  ].filter(Boolean);
-
-  const appearance = parts.length > 0 ? parts.join(", ") : profile.characterDescription;
-  const outfit = profile.defaultOutfit ?? "colorful age-appropriate clothing";
-
-  return `${profile.characterName}: ${appearance}, wearing ${outfit}.`;
-}
-
-export function buildImagenSharedContext(
-  profile: CharacterProfile | CharacterProfile[],
-  illustrationStyle?: IllustrationStyle
-): string {
-  const profiles = normalizeProfiles(profile);
-  const characterLines = profiles.map(buildImagenCharacterDescription).join(" ");
-
-  return `Children's picture book illustration. ${getIllustrationStyleDirective(illustrationStyle)} Warm soft lighting, whimsical and magical feel, rich detail, published storybook quality. No text, no words, no letters, no signs, no labels anywhere. Not a sketch or line art. Not monochrome.
-
-Character: ${characterLines}`;
-}
-
-/** For Imagen models — short, visual, no instruction language. Negative prompt handles the "don'ts". */
-export function buildImagenPagePrompt(sharedContext: string, page: StoryPage): string {
-  return `${sharedContext}\n\nScene: ${page.text}`;
-}
-
-/** For Imagen cover — short, visual. */
-export function buildImagenCoverPrompt(sharedContext: string, storyTitle: string, characterNames: string[]): string {
-  const mainCharacter = characterNames[0] ?? "the main character";
-  const supporting = characterNames.slice(1);
-  return `${sharedContext}\n\nScene: ${mainCharacter} stands confidently at the center in an adventurous pose, set against a grand magical world full of color and wonder.${supporting.length > 0 ? ` ${supporting.join(" and ")} appear nearby.` : ""} Wide landscape composition, rich warm lighting, vibrant colors, storybook cover quality.`;
-}
-
 /** For Gemini models — full instruction prompt with style directives and self-check. */
 export function buildFinalImagePromptFromContext(
   sharedContextPrompt: string,
@@ -463,7 +422,10 @@ export function buildRetryImagePrompt(
   qualityFlags?: string[]
 ): string {
   const reinforcement = buildRetryReinforcement(invalidReason);
-  return `${reinforcement}\n\n---\n\nORIGINAL SCENE REQUIREMENTS (applied again):\n\n${originalPrompt}`.trim();
+  const reviewerFeedback = qualityFlags?.length
+    ? `\n\nREVIEWER FEEDBACK ON THE PREVIOUS ATTEMPT (fix these):\n${qualityFlags.map((flag) => `- ${flag}`).join("\n")}`
+    : "";
+  return `${reinforcement}${reviewerFeedback}\n\n---\n\nORIGINAL SCENE REQUIREMENTS (applied again):\n\n${originalPrompt}`.trim();
 }
 
 // =============================================================================

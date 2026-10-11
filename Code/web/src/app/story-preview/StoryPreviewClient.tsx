@@ -168,6 +168,7 @@ function PageImage({
   onRetry,
   aspectClass,
   plain,
+  fitMode,
 }: {
   pageNumber: number;
   state: PageImageState | undefined;
@@ -176,10 +177,12 @@ function PageImage({
   onRetry: (pageNumber: number) => void;
   aspectClass?: string;
   plain?: boolean;
+  fitMode?: "cover" | "contain";
 }) {
   const resolvedAspectClass = aspectClass ?? "aspect-[3/4]";
   const shellClass = plain ? "" : " rounded-2xl shadow-[0_8px_32px_rgba(23,30,69,0.15)] duration-300";
   const fallbackShellClass = plain ? "" : " rounded-2xl";
+  const resolvedFitMode = fitMode ?? "cover";
 
   // Invalid image — show quality gate fallback
   if (isInvalid) {
@@ -234,12 +237,12 @@ function PageImage({
 
   if (state.status === "success") {
     return (
-      <div className={`w-full ${resolvedAspectClass} overflow-hidden${shellClass}`}>
+      <div className={`w-full ${resolvedAspectClass} overflow-hidden bg-[#120f0a]${shellClass}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={state.imageUrl}
           alt={`Illustration for page ${pageNumber}`}
-          className="w-full h-full object-cover"
+          className={`w-full h-full ${resolvedFitMode === "contain" ? "object-contain" : "object-cover"}`}
           width={512}
           height={640}
         />
@@ -477,21 +480,13 @@ export default function StoryPreviewClient() {
               coverImageBase64: coverBase64,
               pageImagesBase64,
               storyJson: data.story,
+              imageGenerationContext: context,
             }),
           });
           const saveData = await saveRes.json() as { storyId?: string };
 
           if (saveData.storyId && isMounted) {
-            // Store remaining pages for StorySavedClient to pick up
-            const remainingPrompts = data.imagePrompts.filter(p => p.pageNumber !== 1);
-            if (remainingPrompts.length > 0) {
-              sessionStorage.setItem("heroStorybookPendingGen", JSON.stringify({
-                storyId: saveData.storyId,
-                imageGenerationContext: context,
-                story: data.story,
-                pendingPageNumbers: remainingPrompts.map(p => p.pageNumber),
-              }));
-            }
+            // The story page fills any missing images server-side.
             router.replace(`/story/${saveData.storyId}`);
             return;
           }
@@ -695,7 +690,7 @@ export default function StoryPreviewClient() {
 
               <div className="flex min-h-[58%] flex-1 items-center justify-center py-4 md:min-h-[60%] md:py-6">
                 <div className="w-full">
-                  <PageImage pageNumber={0} state={coverImageState} onRetry={handleCoverRetry} aspectClass="aspect-[16/9]" plain />
+                  <PageImage pageNumber={0} state={coverImageState} onRetry={handleCoverRetry} aspectClass="aspect-[16/9]" plain fitMode="contain" />
                 </div>
               </div>
 

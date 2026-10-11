@@ -1,52 +1,52 @@
 import { prisma } from "@/lib/prisma";
+import {
+  IMAGE_MODELS,
+  IMAGES_PER_STORY,
+  DEFAULT_IMAGE_MODEL,
+  isSupportedImageModel,
+  type ImageModelId,
+} from "@/lib/imageModels";
+
+export { IMAGE_MODELS, IMAGES_PER_STORY, DEFAULT_IMAGE_MODEL, isSupportedImageModel };
+export type { ImageModelId };
 
 const ADMIN_EMAILS = ["amitkarmakar1980@gmail.com"];
 
-export const IMAGE_MODELS = [
-  {
-    id: "imagen-4.0-generate-001",
-    label: "Imagen 4 Standard",
-    costPerImage: 0.04,
-    description: "Best quality · $0.04/image · $0.28/story",
-  },
-  {
-    id: "imagen-4.0-fast-generate-001",
-    label: "Imagen 4 Fast",
-    costPerImage: 0.02,
-    description: "Lower quality · $0.02/image · $0.14/story",
-  },
-  {
-    id: "gemini-2.5-flash-image",
-    label: "Gemini 2.5 Flash Image",
-    costPerImage: 0.039,
-    description: "Supports reference photos · $0.039/image · $0.27/story",
-  },
-  {
-    id: "gemini-3.1-flash-image-preview",
-    label: "Gemini 3.1 Flash Image",
-    costPerImage: 0.045,
-    description: "Latest Gemini · $0.045+/image · $0.32+/story",
-  },
-] as const;
+export const DEFAULT_TEXT_MODEL = "gemini-3.8-flash";
 
-export type ImageModelId = (typeof IMAGE_MODELS)[number]["id"];
-
-export const IMAGES_PER_STORY = 7;
+export function getTextModel(): string {
+  return process.env.GEMINI_TEXT_MODEL ?? DEFAULT_TEXT_MODEL;
+}
 
 export function isAdminEmail(email: string | null | undefined): boolean {
   return !!email && ADMIN_EMAILS.includes(email);
 }
 
 export function getModelCost(modelId: string): number {
-  return IMAGE_MODELS.find((m) => m.id === modelId)?.costPerImage ?? 0.02;
+  return IMAGE_MODELS.find((m) => m.id === modelId)?.costPerImage ?? IMAGE_MODELS[0].costPerImage;
 }
 
-export async function getImageModel(): Promise<string> {
+/**
+ * Resolves the active image model: admin DB setting → env var → default.
+ * Values that aren't in IMAGE_MODELS (e.g. retired Imagen IDs) are skipped so a
+ * stale setting can't silently break generation.
+ */
+export async function getImageModel(): Promise<ImageModelId> {
   try {
     const config = await prisma.appConfig.findUnique({ where: { key: "imageModel" } });
-    if (config?.value) return config.value;
+    const saved = config?.value;
+    if (isSupportedImageModel(saved)) return saved;
+    if (saved) {
+      console.warn(`Ignoring unsupported imageModel setting "${saved}"`);
+    }
   } catch {}
-  return process.env.GEMINI_IMAGE_MODEL ?? "imagen-4.0-generate-001";
+
+  const envModel = process.env.GEMINI_IMAGE_MODEL;
+  if (isSupportedImageModel(envModel)) return envModel;
+  if (envModel) {
+    console.warn(`Ignoring unsupported GEMINI_IMAGE_MODEL "${envModel}"`);
+  }
+  return DEFAULT_IMAGE_MODEL;
 }
 
 export async function setImageModel(modelId: string): Promise<void> {

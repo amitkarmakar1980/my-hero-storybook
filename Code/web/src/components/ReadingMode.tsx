@@ -45,11 +45,13 @@ function buildPages(props: Omit<ReadingModeProps, "onClose">): ReadingPage[] {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PageImage({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+function PageImage({ imageUrl, alt, fitMode }: { imageUrl?: string; alt: string; fitMode?: "cover" | "contain" }) {
+  const resolvedFitMode = fitMode ?? "cover";
+
   if (imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={imageUrl} alt={alt} className="w-full h-full object-cover" />
+      <img src={imageUrl} alt={alt} className={`w-full h-full bg-[#1a1410] ${resolvedFitMode === "contain" ? "object-contain" : "object-cover"}`} />
     );
   }
   return (
@@ -66,7 +68,7 @@ function CoverSpread({ page }: { page: Extract<ReadingPage, { type: "cover" }> }
       {/* ── Mobile: scrollable, image aspect-ratio ── */}
       <div className="flex flex-col w-full h-full md:hidden overflow-y-auto bg-[#1c1610]">
         <div className="relative w-full aspect-[16/9] flex-shrink-0 overflow-hidden">
-          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} />
+          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} fitMode="contain" />
           <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#0e0b08] to-transparent" />
         </div>
         <div className="px-8 py-10 text-center">
@@ -81,7 +83,7 @@ function CoverSpread({ page }: { page: Extract<ReadingPage, { type: "cover" }> }
       <div className="hidden md:flex w-full h-full">
         {/* Image */}
         <div className="relative w-[60%] flex-shrink-0 overflow-hidden">
-          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} />
+          <PageImage imageUrl={page.imageUrl} alt={`Cover of ${page.title}`} fitMode="contain" />
         </div>
         {/* Text panel */}
         <div className="flex-1 flex flex-col items-center justify-center overflow-hidden bg-[#1c1610]">

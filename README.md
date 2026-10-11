@@ -1,325 +1,212 @@
 # Hero Storybook
 
-Turn your child into the hero of their own personalized AI-illustrated storybook. Upload a photo, pick a theme, and get a fully illustrated 6-page story — written and painted by AI — with your child as the star.
+Turn a child into the hero of their own AI-illustrated picture book. Upload a photo, pick a theme, and get a fully illustrated story — written by Gemini, painted by Nano Banana — with the child as the star on every page.
 
 🌐 **Live:** [my-hero-storybook.vercel.app](https://my-hero-storybook.vercel.app)
 
 ---
 
-## Table of Contents
+## Contents
 
 - [Features](#features)
-- [How It Works](#how-it-works)
-- [Story Themes](#story-themes)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [API Routes](#api-routes)
-- [Image Generation Pipeline](#image-generation-pipeline)
-- [Database Schema](#database-schema)
-- [Admin Panel](#admin-panel)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
+- [How it works](#how-it-works)
+- [Image pipeline](#image-pipeline)
+- [Quality gate and evals](#quality-gate-and-evals)
+- [Reliability](#reliability)
+- [Tech stack](#tech-stack)
+- [Project structure](#project-structure)
+- [API routes](#api-routes)
+- [Data model](#data-model)
+- [Admin panel](#admin-panel)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
 - [Deployment](#deployment)
 
 ---
 
 ## Features
 
-- **Personalized stories** — AI writes a 6-page storybook starring your child by name and personality
-- **Photo-based character** — Upload a child photo; Gemini Vision analyzes it and builds a consistent illustrated character profile used across all 7 images
-- **Multi-character stories** — Add siblings, friends, or family members, each with their own photo and age
-- **15 story themes** — From Space Explorer to Candy Kingdom (3 free, 12 premium)
-- **3 story lengths** — Short (2–4 sentences/page), Standard (4–6), Long (6–8)
-- **AI illustrations** — Full-color storybook images via Google Imagen 4
-- **Immersive reading experience** — Dark cinematic default view with serif typography and full-bleed images
-- **Reading Mode** — Horizontal paginated book spread on desktop (keyboard nav, swipe on mobile)
-- **Google Sign-In** — NextAuth v5 with Google OAuth
-- **Auto-save** — Story and images saved to your profile immediately after cover + page 1 are ready
-- **Progressive generation** — Cover image first, page 1 second, remaining pages async in background
-- **Profile library** — All saved stories and uploaded child photos in one place
-- **PDF download** — Export any story as a formatted PDF
-- **Admin panel** — Cost tracking, per-user analytics, model switching, story regeneration
+- **Personalized stories** — a 6-page story (admins can choose 1–20) starring the child by name and personality, in three lengths: short, standard, long
+- **Photo-based characters** — Gemini analyzes each uploaded photo into a structured character profile; the photo itself is also sent with every illustration as an identity reference
+- **Multi-character stories** — siblings, friends, or family, each with their own photo
+- **15 themes** — Space Explorer to Candy Kingdom (3 free, 12 premium; premium needs sign-in)
+- **7 illustration styles** — classic storybook, watercolor, cartoon, gouache, colored pencil, paper cut, soft digital painting
+- **Quality-gated illustrations** — every image is checked by an AI judge and regenerated once if it fails ([details](#quality-gate-and-evals))
+- **Self-healing stories** — any missing image is filled in server-side when the story is opened ([details](#reliability))
+- **Immersive reader** — dark, cinematic scroll view plus a paginated Reading Mode (keyboard and swipe)
+- **Library and PDF** — saved stories and photos on the profile page; export any story as a PDF
+- **Admin panel** — usage and cost analytics, image-model switching, story regeneration
 
 ---
 
-## How It Works
-
-### Generation Flow
+## How it works
 
 ```
-User fills form (name, theme, length, photo)
-        ↓
-CreateStoryForm calls /api/generate-storybook
-        ↓
-Gemini Vision analyzes uploaded photo
-→ Extracts CharacterProfile (face shape, skin tone, hair, eyes, build, outfit, visual anchors)
-        ↓
-Gemini generates 6-page story draft
-→ Refines for continuity, age-appropriateness, and length
-        ↓
-Progress bar shows funny messages while:
-  1. Cover image generated (Imagen 4) — 16:9 landscape
-  2. Page 1 image generated (Imagen 4) — 3:4 portrait
-        ↓
-Story saved to database with cover + page 1
-        ↓
-User navigated to /story/[id] — immersive dark layout
-        ↓
-Pages 2–6 generate async in background
-→ Each page updates DB via PATCH as it completes
-→ Spinning "Painting…" placeholders shown until ready
+Create form (names, theme, length, style, photos)
+        │
+        ▼
+POST /api/generate-storybook
+  1. Gemini Vision → CharacterProfile per photo (schema-constrained JSON)
+  2. Gemini → story draft → refinement pass (exact page count enforced by schema)
+  3. Returns story + imageGenerationContext (profiles, shared style prompt, photos)
+        │
+        ▼
+Create screen generates cover (16:9) and page 1 (3:4)   ← POST /api/generate-story-images
+        │
+        ▼
+POST /api/stories — uploads images, saves story + generation context
+        │
+        ▼
+/story/[id] — finds every image still missing and fills them one by one
+              via POST /api/stories/[id]/images ("Painting…" placeholders)
 ```
 
-### Reading Experience
-
-The default story view is a dark, cinematic vertical-scroll layout:
-- Full-bleed 16:9 cover image with title and cover text
-- Alternating image-left / image-right spreads per page
-- Georgia serif text with paragraph formatting (2 sentences per paragraph)
-- Adaptive font size based on story length (short → large type, long → compact)
-- Sticky top bar: ← Library | Story Title | Reading Mode button
-
-**Reading Mode** (desktop only) opens a full-screen paginated experience:
-- One page at a time, fixed 50/50 image-text split
-- Keyboard arrow keys or click arrows to navigate
-- Progress dots at bottom
-- Film grain texture, dark background (#0e0b08)
-- Swipe gesture on mobile (vertical scroll preferred on mobile)
+Guests follow the same flow on `/story-preview`; their story isn't saved.
 
 ---
 
-## Story Themes
+## Image pipeline
 
-| Theme | Free/Premium | Vibe |
-|-------|-------------|------|
-| Space Explorer 🚀 | Free | Rockets, nebulae, alien friends |
-| Jungle Adventure 🦁 | Free | Wild animals, hidden waterfalls |
-| Magic School 🪄 | Free | Spells, potions, friendly dragons |
-| Underwater Kingdom 🐠 | Premium | Merfolk, sunken treasure, dolphins |
-| Dinosaur World 🦕 | Premium | Triceratops rides, prehistoric valley |
-| Fairy Tale Castle 🏰 | Premium | Knights, dragons, royal quests |
-| Pirate Seas 🏴‍☠️ | Premium | Galleons, treasure maps, high seas |
-| Arctic Quest 🐧 | Premium | Polar bears, northern lights, sleds |
-| Superhero City ⚡ | Premium | Superpowers, city-saving, kindness |
-| Enchanted Garden 🌸 | Premium | Fairies, talking flowers, hidden magic |
-| Robot Workshop 🤖 | Premium | Robots, inventions, STEM adventure |
-| Cloud Kingdom ☁️ | Premium | Sky whales, storm sprites, rainbows |
-| Dragon Rider 🐉 | Premium | Baby dragons, mountain flights |
-| Lost Civilization 🗿 | Premium | Jungle temples, ancient puzzles |
-| Candy Kingdom 🍭 | Premium | Chocolate rivers, candy clouds |
+All image generation goes through [`src/lib/imageGeneration.ts`](Code/web/src/lib/imageGeneration.ts), shared by every route.
 
-Premium themes require Google sign-in.
+**Models** (Gemini API, selectable in the admin panel; list in [`src/lib/imageModels.ts`](Code/web/src/lib/imageModels.ts)):
+
+| Model | ID | Per image (1K) | Per story (7 images) |
+|---|---|---|---|
+| **Nano Banana 2.1** (default) | `gemini-nano-banana-2.1` | $0.034 | ~$0.24 |
+| Nano Banana 2 | `gemini-3.1-flash-image` | $0.067 | ~$0.47 |
+| Nano Banana Pro | `gemini-3-pro-image` | $0.134 | ~$0.94 |
+| Nano Banana 2 Lite | `gemini-3.1-flash-lite-image` | $0.034 | ~$0.24 |
+
+Imagen 4 was shut down in the Gemini API on 2026-08-17. A saved model setting or `GEMINI_IMAGE_MODEL` value that isn't in the list is ignored (with a warning) in favor of the default.
+
+**Each request** sends the character reference photos, the shared style + character prompt, and the scene, with `responseModalities: ["IMAGE"]` and `imageConfig.aspectRatio` set to `3:4` (pages) or `16:9` (cover). Output is normalized with sharp to 1024×1365 or 1600×900 JPEG.
+
+**Retries** — up to 3 attempts per image. Rate limits (429), server errors, timeouts (120 s, enforced via `abortSignal`), and empty/blocked responses are retried with backoff; permanent errors (bad key, unknown model) fail fast. Every failure is logged as `[image] model=… page=… attempt=… kind=…`.
 
 ---
 
-## Tech Stack
+## Quality gate and evals
+
+### Inline gate
+
+Every generated image passes through [`src/lib/imageQuality.ts`](Code/web/src/lib/imageQuality.ts):
+
+1. **Pixel checks** (free) — rejects flat/blank frames and black-and-white output.
+2. **LLM judge** (`gemini-3.5-flash-lite`, ~$0.0015/check) — sees the reference photo(s) and the image, and returns schema-constrained scores:
+   - `likeness`, `sceneMatch`, `styleMatch` on 1–5 (pass threshold: 3 each)
+   - flags for visible text, severe anatomy errors, collages, and isolated-face avatars
+3. **One regeneration** on failure, with the judge's feedback added to the prompt. If both attempts fail, the better-scoring image is kept rather than showing a placeholder.
+
+Verdicts are logged as `[quality] …` and stored with each page in `pageImagesJson[n].quality`. The judge **fails open**: if it errors, the image passes with a `judge_unavailable` flag, so a judge outage never blocks a story. Set `IMAGE_QUALITY_GATE=off` to skip the judge (pixel checks still run).
+
+### Offline evals
+
+```bash
+cd Code/web
+npm run eval:images                                   # dry run: plan + estimated cost
+npm run eval:images -- --yes                          # run with the current model
+npm run eval:images -- --models gemini-nano-banana-2.1,gemini-3-pro-image --yes
+npm run eval:images -- --gate --yes                   # measure the full gated pipeline
+```
+
+Runs the fixed cases in [`scripts/eval/cases.json`](Code/web/scripts/eval/cases.json) through the production prompts and generation code. It grades every image, grades cross-page character and style consistency per book, and writes `results.json` plus an HTML report with every image to `scripts/out/eval/<timestamp>/`.
+
+### Judge calibration
+
+```bash
+npx tsx --tsconfig tsconfig.json scripts/eval/calibrate-judge.mts scripts/out/eval/<timestamp> [other-child.jpg]
+```
+
+Checks the judge rejects known-bad inputs: wrong scene text, a grayscale image, a text poster, and, given an illustration of a different child, poor likeness. Run it after changing the judge prompt, model, or thresholds. Eval fixtures must be stand-in or consented photos — never real customers' photos.
+
+---
+
+## Reliability
+
+A story never silently loses images:
+
+- **Generation context is persisted.** `storyJson.imageGenerationContext` stores the character profiles, shared style prompt, and illustration style (photos stay in storage). Older stories without it get one rebuilt from their stored photos on first use.
+- **Server-side fill.** `POST /api/stories/[id]/images` generates and persists one image (`"cover"` or a page number). It's idempotent: if the image already exists it's returned unless `force` is set.
+- **Self-healing view.** When the owner opens a story, the page requests every missing image in turn. Failures show a **Try again** control, and a **Paint missing (n)** button retries everything at once. Admins viewing someone else's story see the controls without auto-generation.
+- **Atomic writes.** Page images are written with a single `jsonb_set` update, so concurrent fills can't overwrite each other.
+- **Storage retries.** Supabase uploads retry 3× with backoff, and every failure is logged.
+
+---
+
+## Tech stack
 
 | Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 15 (App Router) |
+|---|---|
+| Framework | Next.js 16.2 (App Router, Turbopack), React 19 |
 | Language | TypeScript |
 | Styling | Tailwind CSS v4 |
-| Auth | NextAuth v5 (Google OAuth) |
-| Database | Supabase PostgreSQL via Prisma 7 |
-| ORM | Prisma 7 with `@prisma/adapter-pg` |
-| File Storage | Supabase Storage (story images + child photos) |
-| AI — Story Text | Google Gemini 2.5 Flash (`generateContent`) |
-| AI — Images | Google Imagen 4 (`generateImages`) |
-| Image Processing | sharp (Gemini outputs only; Imagen bypassed to preserve native resolution) |
-| Deployment | Vercel |
+| Auth | Auth.js / NextAuth v5 (Google OAuth, Prisma adapter) |
+| Database | Supabase PostgreSQL via Prisma 7 + `@prisma/adapter-pg` |
+| Storage | Supabase Storage (`story-images`, `child-photos`) |
+| Story text | Gemini 3.8 Flash (REST, JSON schema output) |
+| Illustrations | Nano Banana family via `@google/genai` |
+| Quality judge | Gemini 3.5 Flash-Lite |
+| Image processing | sharp |
+| PDF | jsPDF |
+| Hosting | Vercel |
 
 ---
 
-## Architecture
-
-### File Structure
+## Project structure
 
 ```
 Code/web/
-├── prisma/
-│   ├── schema.prisma          # 7 Prisma models
-│   └── migrations/            # SQL migration history
-├── prisma.config.ts           # Prisma 7 connection config (loads .env.local)
+├── prisma/                         # schema + migrations (Prisma 7; URLs in prisma.config.ts)
+├── scripts/
+│   ├── eval-images.mts             # offline image eval → HTML report
+│   ├── eval/cases.json             # eval fixtures
+│   ├── eval/fixtures/              # stand-in reference photos
+│   ├── eval/calibrate-judge.mts    # judge sanity checks
+│   └── consistency-test.mjs        # A/B: photo-only vs. page-1 anchor chaining
 └── src/
     ├── app/
-    │   ├── page.tsx                        # Landing page
-    │   ├── create/
-    │   │   ├── page.tsx                    # Create form wrapper
-    │   │   └── CreateStoryForm.tsx         # Main form + generation trigger
-    │   ├── story-preview/
-    │   │   ├── page.tsx
-    │   │   └── StoryPreviewClient.tsx      # Guest fallback generation view
-    │   ├── story/[id]/
-    │   │   ├── page.tsx                    # Server: fetch story, check ownership
-    │   │   └── StorySavedClient.tsx        # Immersive story view + async gen
-    │   ├── profile/
-    │   │   ├── page.tsx                    # Server: fetch stories + photos
-    │   │   └── ProfileClient.tsx           # Story grid + photo gallery
-    │   ├── admin/
-    │   │   ├── page.tsx                    # Email-gated admin entry
-    │   │   ├── AdminClient.tsx             # Stats dashboard + model picker
-    │   │   └── users/[userId]/page.tsx     # Admin view of any user's profile
-    │   └── api/
-    │       ├── auth/[...nextauth]/route.ts
-    │       ├── generate-storybook/route.ts
-    │       ├── generate-story-images/route.ts
-    │       ├── stories/route.ts            # GET + POST
-    │       ├── stories/[id]/route.ts       # GET + PATCH + DELETE
-    │       ├── profile/photos/route.ts     # GET + POST
-    │       ├── profile/photos/[id]/route.ts
-    │       ├── admin/config/route.ts       # GET + PUT image model
-    │       ├── admin/stats/route.ts        # Dashboard metrics
-    │       └── admin/stories/[id]/regenerate/route.ts
-    ├── components/
-    │   ├── Header.tsx                      # Sticky nav with user menu
-    │   ├── ReadingMode.tsx                 # Full-screen paginated reader
-    │   └── ThemesSection.tsx              # Theme cards grid
+    │   ├── create/                 # form + kicks off generation
+    │   ├── story-preview/          # guest flow
+    │   ├── story/[id]/             # saved story view (self-healing image fill)
+    │   ├── profile/                # library + photos
+    │   ├── admin/                  # dashboard, model picker, user views
+    │   └── api/                    # see API routes
+    ├── components/                 # Header, ReadingMode, ThemesSection
     └── lib/
-        ├── auth.ts                         # Full NextAuth config (Prisma adapter)
-        ├── auth.config.ts                  # Edge-safe NextAuth config (middleware)
-        ├── config.ts                       # Image models, admin emails, cost calc
-        ├── formatStoryText.ts             # 2-sentence paragraph formatter
-        ├── prisma.ts                       # Prisma client singleton
-        ├── prompts.ts                      # All Gemini/Imagen prompts
-        ├── storyThemes.ts                 # 15 theme configs (colors, icons, etc.)
-        └── supabase-server.ts             # Storage upload/download helpers
+        ├── imageGeneration.ts      # model calls, retries, normalization, gate loop
+        ├── imageQuality.ts         # pixel checks, LLM judge, consistency judge
+        ├── imageModels.ts          # model catalog + prices (client-safe)
+        ├── storyImages.ts          # context resolution, generate + persist one image
+        ├── config.ts               # active model resolution, admin emails, text model
+        ├── prompts.ts              # all story and image prompts
+        ├── supabase-server.ts      # storage helpers (with upload retries)
+        └── auth.ts / auth.config.ts / prisma.ts / illustrationStyles.ts / storyThemes.ts
 ```
-
-### Auth Architecture
-
-NextAuth v5 uses a **split config** pattern to satisfy Next.js edge runtime constraints:
-
-- `auth.config.ts` — Edge-safe, no Node.js modules. Used by middleware to protect `/profile/*` and `/admin/*` routes.
-- `auth.ts` — Full config with Prisma adapter. Used in server components and API routes.
-
-The middleware guards `/profile` (requires sign-in) and `/admin` (requires admin email).
-
-### Session Storage Flow
-
-Story generation uses `sessionStorage` to pass data between pages without URL params:
-
-- `heroStorybookDraft` — Full story data written by `CreateStoryForm` before navigation. Read by `StoryPreviewClient` (guest fallback).
-- `heroStorybookPendingGen` — Written after cover+page1 save. Contains `storyId`, `imageGenerationContext`, `story`, `pendingPageNumbers[]`. Read by `StorySavedClient` on mount to continue async generation.
 
 ---
 
-## API Routes
+## API routes
 
-### `POST /api/generate-storybook`
+| Route | Purpose |
+|---|---|
+| `POST /api/generate-storybook` | Character profiles → story draft → refinement; returns story, image prompts, and `imageGenerationContext` |
+| `POST /api/generate-story-images` | Generate cover (`{ imageGenerationContext, coverImagePrompt }`) or pages (`{ imageGenerationContext, story, imagePrompts }`), quality-gated |
+| `GET / POST /api/stories` | List the user's stories / save a story (uploads images, persists generation context, returns `missingImages`) |
+| `GET / PATCH / DELETE /api/stories/[id]` | Read, add an image, delete (with storage cleanup) |
+| `GET / POST /api/stories/[id]/images` | List missing image targets / generate and persist one (`{ target: "cover" \| n, force? }`) |
+| `GET / POST /api/profile/photos`, `DELETE /api/profile/photos/[id]` | Saved child photos |
+| `GET / PUT /api/admin/config` | Read / set the active image model |
+| `GET /api/admin/stats` | Dashboard metrics and costs |
+| `POST /api/admin/stories/[id]/regenerate` | Re-derive profiles from stored photos and regenerate every image (failed images keep their previous version) |
 
-Orchestrates the full text generation pipeline:
-
-1. If photo provided → calls Gemini Vision with `buildCharacterProfilePrompt()` to extract `CharacterProfile`
-2. Calls Gemini with `buildStoryGenerationPrompt()` → 6-page story draft
-3. Calls Gemini with `buildStoryRefinementPrompt()` → refined story
-4. Returns: `characterProfiles[]`, `imageGenerationContext`, `story`, `coverImagePrompt`, `imagePrompts[]`
-
-**Model:** `GEMINI_TEXT_MODEL` (default: `gemini-2.5-flash`)
-
-### `POST /api/generate-story-images`
-
-Generates one or more images using the configured image model.
-
-**Request modes:**
-- Cover only: `{ imageGenerationContext, coverImagePrompt }`
-- Page images: `{ imageGenerationContext, story, imagePrompts[] }`
-
-**Model routing:**
-- `imagen-*` → `client.models.generateImages()` with `aspectRatio: "3:4"` or `"16:9"`. No sharp post-processing (native resolution preserved).
-- `gemini-*` → `client.models.generateContent()` with `responseModalities: ["TEXT", "IMAGE"]`. Reference photos injected as inline data. Sharp normalizes dimensions.
-
-**Prompt routing by model:**
-- Imagen: `buildImagenSharedContext()` (short visual description) + `buildImagenPagePrompt()` (scene only)
-- Gemini: `buildSharedImageGenerationContext()` (full instruction block) + `buildFinalImagePromptFromContext()` (style + scene + negatives + self-check)
-
-**Retry:** 2 attempts with exponential backoff on rate limits. Falls back to DiceBear placeholder SVG on failure.
-
-### `POST /api/stories`
-
-Saves a story to the database:
-1. Uploads character photos to Supabase `child-photos` bucket
-2. Uploads cover image to Supabase `story-images/[userId]/[timestamp]/cover.jpg`
-3. Uploads page images to `story-images/[userId]/[timestamp]/page-N.jpg`
-4. Creates `Story` record in Prisma with JSON blobs for story content and image URLs
-
-### `PATCH /api/stories/[id]`
-
-Incrementally updates a story's images as async generation completes:
-- `{ pageNumber, imageBase64 }` → uploads page image, merges into `pageImagesJson`
-- `{ coverImageBase64 }` → uploads and sets `coverImageUrl`
-
-### `POST /api/admin/stories/[id]/regenerate`
-
-Re-generates all images for an existing story (admin only):
-1. Downloads stored character photos from Supabase
-2. Re-derives `CharacterProfile` via Gemini Vision (one call per character)
-3. Generates cover + all 6 page images using the active model
-4. Updates story in DB — same ID, same access URL
+Image routes set `maxDuration = 300`.
 
 ---
 
-## Image Generation Pipeline
-
-### Character Consistency
-
-The key to consistent illustrations is the `CharacterProfile` — a structured JSON object extracted from the uploaded photo by Gemini Vision:
-
-```
-{
-  characterName, characterDescription,
-  exactAge, appearanceAge,
-  faceShape, skinTone, hair, eyes, build,
-  signatureFeatures, defaultOutfit,
-  recurringVisualAnchors: [],
-  styleNotes
-}
-```
-
-This profile is embedded in every image prompt via `buildImagenCharacterDescription()` (Imagen) or `buildCharacterAnchor()` (Gemini), ensuring the same child appears on every page.
-
-### Prompt Architecture
-
-Two parallel prompt pipelines exist, selected at runtime based on `GEMINI_IMAGE_MODEL`:
-
-**Imagen pipeline** (short, visual, no instruction language):
-```
-"Children's picture book illustration. Full-color painting, warm soft lighting...
-No text, no words, no letters...
-
-Character: [name]: [age]-year-old, [skin], [face], [hair], [eyes], wearing [outfit].
-
-Scene: [page text]"
-```
-
-**Gemini pipeline** (full instruction block with style directives):
-```
-VISUAL STYLE DIRECTIVE — [full art direction]
-CHARACTER IDENTITY LOCK — [all visual traits]
-CONSISTENCY REINFORCEMENT / PAGE 1 LANGUAGE ESTABLISHMENT
-SCENE — [page text with illustration tasks]
-HARD NEGATIVE REQUIREMENTS — [what NOT to generate]
-MANDATORY SELF-CHECK — [7 validation conditions]
-```
-
-### Image Quality
-
-- **No text in images**: Enforced via prompt phrasing in both pipelines ("No text, no words, no letters, no signs, no labels anywhere")
-- **No sharp upscaling for Imagen**: Imagen returns native-resolution images. Sharp is bypassed to prevent blur from upscaling.
-- **Aspect ratios**: Story pages → `3:4` portrait; Cover → `16:9` landscape. Passed directly to Imagen API.
-
----
-
-## Database Schema
+## Data model
 
 ```prisma
-model User {
-  id, name, email, emailVerified, image
-  accounts Account[]
-  sessions  Session[]
-  photos    UploadedPhoto[]
-  stories   Story[]
-}
-
 model Story {
   id             String   @id @default(cuid())
   userId         String
@@ -327,108 +214,58 @@ model Story {
   coverText      String
   theme          String
   childName      String
-  coverImageUrl  String?          // Supabase public URL
-  storyJson      Json             // StoredStoryData: pages, characterPhotos[]
-  pageImagesJson Json             // Record<pageNumber, {imageUrl}>
+  coverImageUrl  String?
+  storyJson      Json     // StoredStoryData: pages, characters, photos, illustrationStyle, imageGenerationContext
+  pageImagesJson Json     // { [pageNumber]: { imageUrl, quality?: { passed, scores, flags } } }
   childPhotoUrl  String?
-  createdAt      DateTime
+  createdAt      DateTime @default(now())
 }
 
-model UploadedPhoto {
-  id        String
-  userId    String
-  url       String               // Supabase public URL
-  filename  String
-  fileSize  Int                  // bytes, used for admin upload analytics
-  createdAt DateTime
-}
-
-model AppConfig {
-  key       String @id            // e.g. "imageModel"
-  value     String                // e.g. "imagen-4.0-fast-generate-001"
-  updatedAt DateTime
-}
-
-// NextAuth tables: Account, Session, VerificationToken
+model UploadedPhoto { id, userId, url, filename, fileSize, createdAt }
+model AppConfig     { key @id, value, updatedAt }   // e.g. imageModel
+// Auth.js: User, Account, Session, VerificationToken
 ```
 
-**Notes:**
-- Prisma 7 requires connection URLs in `prisma.config.ts` via `defineConfig()`, not in `schema.prisma`
-- Supabase uses two public buckets: `story-images` and `child-photos`
-- `DATABASE_URL` (port 6543, pgbouncer) for runtime; `DIRECT_URL` (port 5432) for migrations only
+---
+
+## Admin panel
+
+`/admin`, restricted to the emails in `ADMIN_EMAILS` (`src/lib/config.ts`):
+
+- **Stats** — stories today, this week, this month, and in total, with estimated cost; a 30-day activity chart; per-user usage table with drill-down
+- **Image model picker** — stored in `AppConfig`; takes effect on the next image, no redeploy
+- **Story regeneration** — from any story page; keeps the same story ID and URL
+- **Admin-only create options** — illustration style and page count
 
 ---
 
-## Admin Panel
+## Getting started
 
-Access at `/admin` — restricted to emails listed in `ADMIN_EMAILS` in `lib/config.ts`.
-
-### Dashboard
-
-- **Story stats**: Today / This Week / This Month / Total — each with estimated cost
-- **Activity chart**: 30-day bar chart of story generation volume
-- **User table**: Per-user breakdown of stories generated, pages, images, uploaded photo size, estimated cost, last activity date — with "View →" link to their full profile
-
-### Image Model Selector
-
-Supported models (selectable via UI, stored in `AppConfig` DB table):
-
-| Model | Cost/image | Cost/story | Notes |
-|-------|-----------|-----------|-------|
-| Imagen 4 Standard | $0.04 | $0.28 | Best quality |
-| Imagen 4 Fast | $0.02 | $0.14 | Faster, slightly lower quality |
-| Gemini 2.5 Flash Image | $0.039 | $0.27 | Supports reference photo injection |
-| Gemini 3.1 Flash Image | $0.045+ | $0.32+ | Latest Gemini |
-
-Model change takes effect on the next story generated — no restart required.
-
-### Story Regeneration
-
-Admins can re-generate all images for any user's story without changing the story ID or access URL:
-1. Open any story from the admin user profile view
-2. Dark admin banner appears at top with "↺ Regenerate Images" button
-3. Regeneration re-downloads photos from Supabase, re-derives character profiles, generates fresh images
-4. Page auto-reloads when complete
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- A Google Cloud project with OAuth 2.0 Web Application credentials
-- A Supabase project (PostgreSQL + two public storage buckets: `story-images`, `child-photos`)
-- A Gemini API key from [Google AI Studio](https://aistudio.google.com)
-
-### Install & Run
+**Prerequisites:** Node.js 20+, a Gemini API key ([AI Studio](https://aistudio.google.com)), Google OAuth web credentials, and a Supabase project.
 
 ```bash
 cd Code/web
-npm install
-DATABASE_URL="postgresql://..." npx prisma generate
-npx prisma db execute --url "postgresql://..." --file prisma/migrations/...
-npm run dev
+npm install                 # also runs prisma generate
+cp .env.example .env.local  # fill in values (see below)
+npx prisma migrate deploy   # create tables (uses DIRECT_URL)
+npm run dev                 # http://localhost:3000
 ```
 
-### Google OAuth Setup
+**Google OAuth:** add `http://localhost:3000/api/auth/callback/google` (and your production URL) as authorized redirect URIs. In Testing mode, add your account as a test user.
 
-1. [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials
-2. Create OAuth 2.0 Client ID → **Web application**
-3. Authorized redirect URIs:
-   - `http://localhost:3000/api/auth/callback/google` (development)
-   - `https://yourdomain.com/api/auth/callback/google` (production)
-4. If app is in **Testing** mode → add your email as a test user under OAuth consent screen
+**Supabase free tier:** projects pause after about a week of inactivity. Sign-in then fails with `tenant/user … not found`. Restore the project from the dashboard; it takes a few minutes to accept connections.
 
 ---
 
-## Environment Variables
+## Environment variables
 
 ```env
-# Gemini API
+# Gemini
 GEMINI_API_KEY=...
-GEMINI_TEXT_MODEL=gemini-2.5-flash
-GEMINI_IMAGE_MODEL=imagen-4.0-fast-generate-001
+# GEMINI_TEXT_MODEL=gemini-3.8-flash          # optional override
+# GEMINI_IMAGE_MODEL=gemini-nano-banana-2.1   # optional fallback; admin setting wins
+# IMAGE_JUDGE_MODEL=gemini-3.5-flash-lite     # optional
+# IMAGE_QUALITY_GATE=off                      # optional: disable the LLM judge
 
 # Auth
 NEXTAUTH_SECRET=...
@@ -436,8 +273,8 @@ GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 
 # Database (Supabase PostgreSQL)
-DATABASE_URL=postgresql://...?pgbouncer=true    # port 6543 — runtime
-DIRECT_URL=postgresql://...                      # port 5432 — migrations only
+DATABASE_URL=postgresql://...:6543/postgres?pgbouncer=true   # runtime (pooled)
+DIRECT_URL=postgresql://...:5432/postgres                    # migrations
 
 # Supabase Storage
 NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
@@ -448,10 +285,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 ## Deployment
 
-Deployed on Vercel. All environment variables set in Vercel project settings.
+Vercel's Git integration deploys every push to `master` to production. Set the environment variables above in the Vercel project settings (`DIRECT_URL` is only needed for migrations).
 
-**Key notes:**
-- `DIRECT_URL` is only needed for migrations — not required at runtime on Vercel
-- The admin story regeneration route uses `maxDuration = 300` (5 min timeout) — requires Vercel Pro for the full duration
-- Imagen 4 has a monthly spend cap in Google AI Studio — raise it under the project settings to avoid 429 errors
-- The `GEMINI_IMAGE_MODEL` env var is the fallback; the active model is stored in `AppConfig` DB table and set via the admin panel
+- Image routes use `maxDuration = 300`. A full admin regeneration with several retries can approach that limit; images are saved as they complete, so a timeout only leaves some images on their previous version.
+- The active image model lives in the database, not the deployment, so changing it never requires a redeploy.

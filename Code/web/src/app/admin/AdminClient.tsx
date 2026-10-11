@@ -1,33 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-
-const IMAGE_MODELS = [
-  {
-    id: "imagen-4.0-generate-001",
-    label: "Imagen 4 Standard",
-    costPerImage: 0.04,
-    description: "Best quality · $0.04/image · $0.28/story",
-  },
-  {
-    id: "imagen-4.0-fast-generate-001",
-    label: "Imagen 4 Fast",
-    costPerImage: 0.02,
-    description: "Lower quality · $0.02/image · $0.14/story",
-  },
-  {
-    id: "gemini-2.5-flash-image",
-    label: "Gemini 2.5 Flash Image",
-    costPerImage: 0.039,
-    description: "Supports reference photos · $0.039/image · $0.27/story",
-  },
-  {
-    id: "gemini-3.1-flash-image-preview",
-    label: "Gemini 3.1 Flash Image",
-    costPerImage: 0.045,
-    description: "Latest Gemini · $0.045+/image · $0.32+/story",
-  },
-] as const;
+import { IMAGE_MODELS } from "@/lib/imageModels";
 
 interface Stats {
   totalStories: number;
